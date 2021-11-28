@@ -45,9 +45,9 @@ typedef enum UWB_err_code
 typedef enum UWB_err_code uwb_error;
 
 enum states {
-    RECEIVE,
-    TRANSMIT,
-    IDLE
+    RECEIVE = 0,
+    TRANSMIT = 1,
+    IDLE = 2
 };
 
 uwb_err_code_e uwb_api_init(uint8_t node_id);

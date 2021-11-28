@@ -12,7 +12,7 @@
 #include "deca_device_api.h"
 
 
-#define ANCHOR_ID 1
+#define ANCHOR_ID 0
 #define NR_OF_ANCHORS 2
 #define RANGING_TIME 5
 
@@ -26,30 +26,37 @@ void anchor_task(void* parameters);
 void appMain() {
     uwb_api_init(ANCHOR_ID);
     xTaskCreate(anchor_task, "anchor", configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle);
+
+    while(1)
+        vTaskDelay(10000);
 }
 
 void anchor_task(void* parameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     uint8_t anchor_pos[6];
+    uwb_set_state(TRANSMIT);
     while(1)
     {
         if(ANCHOR_ID == 0)
         {
+            float range;
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
-            uwb_set_state(TRANSMIT);
-            uwb_do_3way_ranging_with_node(20, anchor_pos);
+            uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, anchor_pos, &range);
+            // DEBUG_PRINT("Error: %d   \n", e);
         }
         else
         {
             uwb_set_state(RECEIVE);
             if (xSemaphoreTake(msgReadySemaphore, 200000))
             {
-                DEBUG_PRINT("SRC: %d   CODE:  %d  \n", uwb_rx_msg.src, uwb_rx_msg.code);
-                if((uwb_rx_msg.src == 0) && (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG));
+                if((uwb_rx_msg.src == 0) && (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG))
                 {
                     uwb_set_state(TRANSMIT);
                     vTaskDelay(ANCHOR_ID*RANGING_TIME);
-                    uwb_do_3way_ranging_with_node(20, anchor_pos);
+                    // uwb_do_3way_ranging_with_node(20, anchor_pos);
+                    float range;
+                    uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, anchor_pos, &range);
+                    // DEBUG_PRINT("Error: %d   \n", e);
                 }
             }
         }

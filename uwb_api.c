@@ -31,6 +31,7 @@ TaskHandle_t uwbTaskHandle = 0;
 SemaphoreHandle_t rxSemaphore;
 SemaphoreHandle_t msgReadySemaphore;
 SemaphoreHandle_t msrmReadySemaphore;
+SemaphoreHandle_t isrSemaphore;
 
 // FOR THE RESPONDER
 static uint64_t poll_rx_ts;
@@ -113,14 +114,16 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
     vSemaphoreCreateBinary(rxSemaphore);
     vSemaphoreCreateBinary(msgReadySemaphore);
     vSemaphoreCreateBinary(msrmReadySemaphore);
+    vSemaphoreCreateBinary(isrSemaphore);
     xSemaphoreGive(rxSemaphore);
     xSemaphoreGive(msgReadySemaphore);
     xSemaphoreGive(msrmReadySemaphore);
+    xSemaphoreGive(isrSemaphore);
 
     enable_uwb_int();  // Enable interrupt
 
     xTaskCreate(uwb_receiver_task, "UWB-rx-en", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
-    xTaskCreate(uwb_isr_task, "UWB-rx-isr",  configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle);
+    xTaskCreate(uwb_isr_task, "UWB-rx-isr",  configMINIMAL_STACK_SIZE, NULL, 4, NULL);
 
     platformSetLowInterferenceRadioMode();
 
@@ -134,6 +137,8 @@ void uwb_set_state(uint8_t value) { //TODO - set mode; get rid of this, use rx e
         case RECEIVE:
             state = RECEIVE;
             dwt_forcetrxoff();
+            dwt_setrxtimeout(0);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
             break; 
             
         case TRANSMIT:
@@ -157,8 +162,13 @@ void __attribute__((used)) EXTI11_Callback(void) {
     NVIC_ClearPendingIRQ(EXTI_IRQChannel);
     EXTI_ClearITPendingBit(EXTI_LineN);
 
-    // Unlock interrupt handling task
-    vTaskNotifyGiveFromISR(uwbTaskHandle, &xHigherPriorityTaskWoken);
+    if(state==RECEIVE) {
+        xSemaphoreGiveFromISR(isrSemaphore, &xHigherPriorityTaskWoken);
+    }
+    else {
+       vTaskNotifyGiveFromISR(uwbTaskHandle, &xHigherPriorityTaskWoken); 
+    }
+    
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
@@ -279,7 +289,7 @@ void rx_err_cb(const dwt_cb_data_t *cb_data) {
 
 void uwb_isr_task(void* parameters) {
     while(1) {
-        if(ulTaskNotifyTake(pdTRUE, 200000 / portTICK_PERIOD_MS) > 0) {
+        if(xSemaphoreTake(isrSemaphore, 200000)){
             if(state == RECEIVE) {
                 last_time_isr = xTaskGetTickCount();
                 dwt_isr();
