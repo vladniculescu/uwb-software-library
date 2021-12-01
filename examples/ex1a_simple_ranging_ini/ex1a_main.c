@@ -47,10 +47,8 @@ void uwb_initiator(void *parameters) {
 
         float range;
         uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, node_pos, &range);
-        uwb_check_for_errors(e);
-        DEBUG_PRINT("Error: %d \n", e);
 
-        if(range > 0.01f) {
+        if(e == UWB_SUCCESS) {
             pkts_ok_100++;
             pkts_ok_1sec++;
         }
@@ -66,7 +64,7 @@ void uwb_initiator(void *parameters) {
         t2 = xTaskGetTickCount();
         if(t2 - t1 > 1000)
         {
-            // DEBUG_PRINT("Successful in 1sec: %d \n", pkts_ok_1sec);
+            DEBUG_PRINT("Successful in 1sec: %d \n", pkts_ok_1sec);
             pkts_ok_1sec = 0;
             t1 = xTaskGetTickCount();
         }

@@ -31,7 +31,7 @@ void appMain()
     xSemaphoreGive(printSemaphore);
 
     uwb_api_init(DRONE_ID);
-    xTaskCreate(mission_drone_task, "mission", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
+    xTaskCreate(mission_drone_task, "mission", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
     xTaskCreate(print_task, "printer", configMINIMAL_STACK_SIZE, NULL, 0, NULL);
 }
 

@@ -12,7 +12,6 @@
 #include "deca_device_api.h"
 
 
-#define ANCHOR_ID 4
 #define NR_OF_ANCHORS 5
 #define RANGING_TIME 3
 
@@ -24,11 +23,13 @@ extern TaskHandle_t uwbTaskHandle;
 SemaphoreHandle_t printSemaphore;
 
 uint32_t packets = 0;
+uint32_t ANCHOR_ID = 4;
 
 void anchor_task(void* parameters);
 void print_task(void* parameters);
 
 void appMain() {
+    DEBUG_PRINT("ANCHOR ID: %d\n", ANCHOR_ID);
     vSemaphoreCreateBinary(printSemaphore);
     xSemaphoreGive(printSemaphore);
 
@@ -51,9 +52,8 @@ void anchor_task(void* parameters) {
         if(ANCHOR_ID == 0) {
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
             e = uwb_do_3way_ranging_with_node(20, anchor_pos);
-            float range;
+            // float range;
             // e = uwb_do_4way_ranging_with_node(20, anchor_pos, &range);
-            uwb_check_for_errors(e);
             if(e == UWB_SUCCESS)
                 packets++;
             xSemaphoreGive(printSemaphore);
@@ -67,9 +67,8 @@ void anchor_task(void* parameters) {
                     uwb_set_state(TRANSMIT);
                     vTaskDelay(ANCHOR_ID*RANGING_TIME);
                     e = uwb_do_3way_ranging_with_node(20, anchor_pos);
-                    float range;
+                    // float range;
                     // e = uwb_do_4way_ranging_with_node(20, anchor_pos, &range);
-                    uwb_check_for_errors(e);
 
                     if(e == UWB_SUCCESS)
                         packets++;

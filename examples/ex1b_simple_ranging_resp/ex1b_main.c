@@ -32,7 +32,7 @@ void appMain()
 void print_rx_measurements(void* parameters) {
     while(1) {
         if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS)) {
-            DEBUG_PRINT("Distance: %.3f \n", last_range_msrm);
+            // DEBUG_PRINT("Distance: %.3f \n", last_range_msrm);
         }
     }
 }
