@@ -1,4 +1,4 @@
-#define DEBUG_MODULE "uwb_initiator"
+#define DEBUG_MODULE "MD"
 
 #include "deck.h"
 #include "debug.h"
@@ -19,6 +19,8 @@ extern float last_range_msrm;
 
 SemaphoreHandle_t printSemaphore;
 
+uint32_t packets[20];
+uint32_t packets_total; 
 
 void mission_drone_task(void* parameters);
 void print_task(void* parameters);
@@ -29,44 +31,39 @@ void appMain()
     xSemaphoreGive(printSemaphore);
 
     uwb_api_init(DRONE_ID);
-    xTaskCreate(mission_drone_task, "mission", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
+    xTaskCreate(mission_drone_task, "mission", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
     xTaskCreate(print_task, "printer", configMINIMAL_STACK_SIZE, NULL, 0, NULL);
 }
 
 void mission_drone_task(void* parameters) {
-    TickType_t xLastWakeTime = xTaskGetTickCount();
     uwb_set_state(RECEIVE);
-    float anchor_pos[3];
-    uint8_t prev_msg_src_id;
     while(1)
     {
-        // if (xSemaphoreTake(msgReadySemaphore, 200000 / portTICK_PERIOD_MS))
-        // {
-        //     DEBUG_PRINT("A: code %d   \n", uwb_rx_msg.code);
-        //     if(uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG)
-        //     {
-        //         prev_msg_src_id = uwb_rx_msg.src;
-        //         for(uint8_t i=0; i<3; i++)
-        //             anchor_pos[i] = (float)(uwb_rx_msg.data[2*i] * 256 + uwb_rx_msg.data[2*i+1]);
-        //     }
-        // }
-        if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS))
-        {
+        if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS)) {
             xSemaphoreGive(printSemaphore);
-            // DEBUG_PRINT("ANCHOR %d  Range: %f \n", uwb_rx_msg.src, last_range_msrm);
-            // if(uwb_rx_msg.src == prev_msg_src_id)
-            // {
-            //     registerAnchorDist(anchor_pos[0], anchor_pos[1], anchor_pos[2], last_range_msrm, 0.4f);
-            // }
+            packets[uwb_rx_msg.src]++;
+            packets_total++;
+            // registerAnchorDist(anchor_pos[0], anchor_pos[1], anchor_pos[2], last_range_msrm, 0.4f);
         }   
     }
 }
 
 
 void print_task(void* parameters) {
+    TickType_t last_freq_print = xTaskGetTickCount();
     while(1) {
         if (xSemaphoreTake(printSemaphore, 200000 / portTICK_PERIOD_MS)) {
-            DEBUG_PRINT("t: %d  ANCHOR %d  Range: %f \n", xTaskGetTickCount(), uwb_rx_msg.src, last_range_msrm);
+            if(xTaskGetTickCount() - last_freq_print > 2000) {
+                last_freq_print = xTaskGetTickCount();
+                for (uint8_t i=0; i<20; i++) {
+                    if(packets[i] > 0)
+                        DEBUG_PRINT("Anchor %d: %d meas/sec  \n", i, packets[i] / 2);
+                    packets[i] = 0;
+                }
+                DEBUG_PRINT("Total: %d meas/sec  \n", packets_total / 2);
+                DEBUG_PRINT("\n");
+                packets_total = 0;
+            }
         }
     }
 }

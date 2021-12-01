@@ -47,7 +47,7 @@ void uwb_initiator(void *parameters) {
 
         float range;
         uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, node_pos, &range);
-        uwb_check_for_errors(range);
+        uwb_check_for_errors(e);
         DEBUG_PRINT("Error: %d \n", e);
 
         if(range > 0.01f) {

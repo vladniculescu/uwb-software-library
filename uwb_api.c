@@ -28,6 +28,7 @@
 
 // EXTERN
 TaskHandle_t uwbTaskHandle = 0;
+TaskHandle_t uwbTaskHandle_rx = 0;
 SemaphoreHandle_t rxSemaphore;
 SemaphoreHandle_t msgReadySemaphore;
 SemaphoreHandle_t msrmReadySemaphore;
@@ -123,7 +124,7 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
     enable_uwb_int();  // Enable interrupt
 
     xTaskCreate(uwb_receiver_task, "UWB-rx-en", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
-    xTaskCreate(uwb_isr_task, "UWB-rx-isr",  configMINIMAL_STACK_SIZE, NULL, 4, NULL);
+    xTaskCreate(uwb_isr_task, "UWB-rx-isr",  configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle_rx);
 
     platformSetLowInterferenceRadioMode();
 
@@ -163,10 +164,10 @@ void __attribute__((used)) EXTI11_Callback(void) {
     EXTI_ClearITPendingBit(EXTI_LineN);
 
     if(state==RECEIVE) {
-        xSemaphoreGiveFromISR(isrSemaphore, &xHigherPriorityTaskWoken);
+        vTaskNotifyGiveFromISR(uwbTaskHandle_rx, &xHigherPriorityTaskWoken); 
     }
     else {
-       vTaskNotifyGiveFromISR(uwbTaskHandle, &xHigherPriorityTaskWoken); 
+        vTaskNotifyGiveFromISR(uwbTaskHandle, &xHigherPriorityTaskWoken); 
     }
     
 
@@ -190,6 +191,8 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
 
     if(uwb_rx_msg.ctrl == 0xDE)
         xSemaphoreGive(msgReadySemaphore);
+
+    // DEBUG_PRINT("%d dest %d, src %d, code %d \n", xTaskGetTickCount() % 10000, uwb_rx_msg.dest, uwb_rx_msg.src, uwb_rx_msg.code);
 
     if((uwb_rx_msg.ctrl == 0xDE) && (uwb_rx_msg.dest == ID) && (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG)) {
             poll_rx_ts = get_rx_timestamp_u64();  // Get poll reception timestamp.
@@ -289,7 +292,7 @@ void rx_err_cb(const dwt_cb_data_t *cb_data) {
 
 void uwb_isr_task(void* parameters) {
     while(1) {
-        if(xSemaphoreTake(isrSemaphore, 200000)){
+        if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200000)) > 0) {
             if(state == RECEIVE) {
                 last_time_isr = xTaskGetTickCount();
                 dwt_isr();
@@ -334,7 +337,7 @@ uwb_err_code_e uwb_send_frame_wait_rsp(uint8_t* tx_msg, uint8_t msg_size, uint32
     if(ret < UWB_SUCCESS)
         return UWB_TX_ERROR;
 
-    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10)) > 0);
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) > 0);
 
     uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID);  // Read status register to check if the receive is valid
 
@@ -358,6 +361,9 @@ uwb_err_code_e uwb_send_frame(uint8_t* tx_msg, uint8_t msg_size, uint8_t ranging
     uint8_t ret = 0;
     dwt_writetxdata(msg_size, tx_msg, 0); // Zero offset in TX buffer
     dwt_writetxfctrl(msg_size, 0, ranging); // Zero offset in TX buffer, ranging
+
+    dwt_setinterrupt(DWT_INT_TFRS, 2); 
+
     if(tx_delay > 0) {
         dwt_setdelayedtrxtime(tx_delay);
         ret = dwt_starttx(DWT_START_TX_DELAYED);
@@ -365,10 +371,15 @@ uwb_err_code_e uwb_send_frame(uint8_t* tx_msg, uint8_t msg_size, uint8_t ranging
     else
         ret = dwt_starttx(DWT_START_TX_IMMEDIATE);
 
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) > 0);
+    dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
+
     if(ret < UWB_SUCCESS)
         return UWB_TX_ERROR;
     else
         return UWB_SUCCESS;
+
+
 }
 
 

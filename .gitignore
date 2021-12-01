@@ -2,3 +2,4 @@ examples/ex1a_simple_ranging_ini/bin/
 examples/ex1b_simple_ranging_resp/bin/
 examples/ex2a_drone_loc_anchor_drone/bin/
 examples/ex2b_drone_loc_mission_drone/bin/
+inc/uwb_api2.h

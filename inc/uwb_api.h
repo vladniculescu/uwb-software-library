@@ -38,7 +38,8 @@ typedef enum UWB_err_code
   UWB_TX_ERROR = -3,
   UWB_INVALID_RSP = -4,
   UWB_INVALID_MODE = -5, /**< Trying to send data while in receive mode.*/
-  UWB_ERROR = -6 /**< Unknown error*/
+  UWB_ERROR = -6, /**< Unknown error*/
+  UWB_TEST = -7 /**< Unknown error*/
 } uwb_err_code_e;
 
 
