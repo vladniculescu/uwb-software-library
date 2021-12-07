@@ -369,14 +369,25 @@ uwb_err_code_e uwb_send_frame_wait_rsp(uint8_t* tx_msg, uint8_t msg_size, uint32
     if(ret < UWB_SUCCESS)
         return UWB_TX_ERROR;
 
-    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
+    dwt_setinterrupt(DWT_INT_TFRS, 2);
+
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) == pdFALSE) {
         status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
         if((status_reg & SYS_STATUS_TXFRS) == 0)
             dwt_forcetrxoff();
+            dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
             return UWB_TX_ERROR;
     }
     else
-        status_reg = dwt_read32bitreg(SYS_STATUS_ID);  // Read status register to check if the receive is valid
+        dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
+
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE)
+    {
+        dwt_forcetrxoff();
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame
+        return UWB_RX_TIMEOUT;
+    }
+    status_reg = dwt_read32bitreg(SYS_STATUS_ID);  // Read status register to check if the receive is valid
 
     if(status_reg & SYS_STATUS_RXFCG) {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame

@@ -23,7 +23,7 @@ extern TaskHandle_t uwbTaskHandle;
 SemaphoreHandle_t printSemaphore;
 
 uint32_t packets = 0;
-uint32_t ANCHOR_ID = 0;
+uint32_t ANCHOR_ID = 4;
 
 void anchor_task(void* parameters);
 void print_task(void* parameters);
@@ -52,7 +52,7 @@ void anchor_task(void* parameters) {
         if(ANCHOR_ID == 0) {
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
             e = uwb_do_3way_ranging_with_node(20, anchor_pos);
-            DEBUG_PRINT("Err Code: %d \n", e);
+            // DEBUG_PRINT("Err Code: %d \n", e);
 
             if(e == UWB_SUCCESS)
                 packets++;
