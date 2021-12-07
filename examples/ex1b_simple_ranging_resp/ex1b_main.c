@@ -14,7 +14,9 @@
 extern SemaphoreHandle_t msgReadySemaphore;
 extern SemaphoreHandle_t msrmReadySemaphore;
 extern UWB_message uwb_rx_msg;
-extern float last_range_msrm;
+
+extern UWB_measurement last_range_msrm;
+
 
 void print_rx_measurements(void* parameters);
 
@@ -32,7 +34,7 @@ void appMain()
 void print_rx_measurements(void* parameters) {
     while(1) {
         if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS)) {
-            // DEBUG_PRINT("Distance: %.3f \n", last_range_msrm);
+            DEBUG_PRINT("Distance: %.2f \n", last_range_msrm.range);
         }
     }
 }

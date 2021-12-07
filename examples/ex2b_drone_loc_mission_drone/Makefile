@@ -16,5 +16,6 @@ PROJ_OBJ += platform_config.o
 
 # Example file
 PROJ_OBJ += ex2b_main.o
+PROJ_OBJ += trajectory.o
 
 include $(CRAZYFLIE_BASE)/Makefile

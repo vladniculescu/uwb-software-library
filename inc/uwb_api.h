@@ -16,6 +16,18 @@ struct UWB_message
 
 typedef struct UWB_message UWB_message;
 
+
+struct UWB_measurement
+{
+    uint8_t src_id;
+    float posx;
+    float posy;
+    float posz;
+    float range;
+};
+
+typedef struct UWB_measurement UWB_measurement;
+
 typedef enum message_type {
     UWB_RANGE_INIT_WITH_COORDS_MSG,
     UWB_RANGE_INIT_NO_COORDS_MSG,
@@ -38,7 +50,8 @@ typedef enum UWB_err_code
   UWB_TX_ERROR = -3,
   UWB_INVALID_RSP = -4,
   UWB_INVALID_MODE = -5, /**< Trying to send data while in receive mode.*/
-  UWB_ERROR = -6 /**< Unknown error*/
+  UWB_ERROR = -6, /**< Unknown error*/
+  UWB_TX_TIMEOUT = -7,
 } uwb_err_code_e;
 
 

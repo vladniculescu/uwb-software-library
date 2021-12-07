@@ -38,7 +38,7 @@ SemaphoreHandle_t isrSemaphore;
 static uint64_t poll_rx_ts;
 UWB_message uwb_rx_msg = {0};
 static TickType_t last_time_isr = 0;
-float last_range_msrm = 0.0f;
+UWB_measurement last_range_msrm = {0};
 
 // FOR THE INITIATOR
 
@@ -207,9 +207,20 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
             int32_t ret = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
             if(ret < UWB_SUCCESS) {
                 // xSemaphoreGive(rxSemaphore);
+                dwt_forcetrxoff();
                 uwb_enable_rx();
                 portYIELD();
             }
+            dwt_setinterrupt(DWT_INT_TFRS, 2); 
+            if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE)
+            {
+                uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
+                if((status_reg & SYS_STATUS_TXFRS) == 0)
+                    dwt_forcetrxoff();
+                    uwb_enable_rx();
+                    portYIELD();
+            }
+            dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2);
     }
     else if((uwb_rx_msg.ctrl == 0xDE) && (uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_3WAY_FINAL_MSG) || (uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG))) {
             dwt_setleds(DWT_LEDS_ENABLE);  // Enable LEDs for visual feedback.
@@ -235,7 +246,8 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
             double tof = tof_dtu * DWT_TIME_UNITS;
 
             float dist = (float)(tof * SPEED_OF_LIGHT);  // Calculate distance in meters.
-            last_range_msrm = dist;
+            last_range_msrm.range = dist;
+            last_range_msrm.src_id = uwb_rx_msg.src;
             uint32_t distance_int = (uint32_t)(dist * 1000);  // Calculate distance in mm.
             xSemaphoreGive(msrmReadySemaphore);
 
@@ -251,7 +263,23 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
                 dwt_writetxdata(sizeof(data_message), data_message, 0); /* Zero offset in TX buffer. */
                 dwt_writetxfctrl(sizeof(data_message), 0, 1); /* Zero offset in TX buffer, ranging. */
                 int ret = dwt_starttx(DWT_START_TX_DELAYED);
-                if(ret < UWB_SUCCESS);  // Do something if TX failed
+                if(ret < UWB_SUCCESS) {
+                    // xSemaphoreGive(rxSemaphore);
+                    dwt_forcetrxoff();
+                    uwb_enable_rx();
+                    portYIELD();
+                }
+
+                dwt_setinterrupt(DWT_INT_TFRS, 2); 
+                if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) == pdFALSE)
+                {
+                    uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
+                    if((status_reg & SYS_STATUS_TXFRS) == 0)
+                        dwt_forcetrxoff();
+                        uwb_enable_rx();
+                        portYIELD();
+                }
+                dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2);
             }
 
             // xSemaphoreGive(rxSemaphore);
@@ -341,7 +369,7 @@ uwb_err_code_e uwb_send_frame_wait_rsp(uint8_t* tx_msg, uint8_t msg_size, uint32
     if(ret < UWB_SUCCESS)
         return UWB_TX_ERROR;
 
-    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) == pdFALSE) {
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
         status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
         if((status_reg & SYS_STATUS_TXFRS) == 0)
             dwt_forcetrxoff();
@@ -436,7 +464,8 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uint8_t* node_po
         tx_ret = uwb_send_frame(tx_final_msg, sizeof(tx_final_msg), 1, final_tx_time);
         if(tx_ret != UWB_SUCCESS)
             return UWB_RX_ERROR;
-    
+        else
+            return UWB_SUCCESS;    
     }
     return UWB_INVALID_RSP;
 }

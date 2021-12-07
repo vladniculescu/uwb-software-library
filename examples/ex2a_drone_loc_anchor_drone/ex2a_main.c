@@ -23,7 +23,7 @@ extern TaskHandle_t uwbTaskHandle;
 SemaphoreHandle_t printSemaphore;
 
 uint32_t packets = 0;
-uint32_t ANCHOR_ID = 4;
+uint32_t ANCHOR_ID = 0;
 
 void anchor_task(void* parameters);
 void print_task(void* parameters);
@@ -52,23 +52,19 @@ void anchor_task(void* parameters) {
         if(ANCHOR_ID == 0) {
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
             e = uwb_do_3way_ranging_with_node(20, anchor_pos);
-            // float range;
-            // e = uwb_do_4way_ranging_with_node(20, anchor_pos, &range);
+            DEBUG_PRINT("Err Code: %d \n", e);
+
             if(e == UWB_SUCCESS)
                 packets++;
             xSemaphoreGive(printSemaphore);
         }
         else {
-            // DEBUG_PRINT("time: %d \n", xTaskGetTickCount() - t0);
             uwb_set_state(RECEIVE);
             if (xSemaphoreTake(msgReadySemaphore, 200000)) {
-                // DEBUG_PRINT("src %d dest %d code %d \n", uwb_rx_msg.src, uwb_rx_msg.dest, uwb_rx_msg.code);
-                if((uwb_rx_msg.src == 0) || (uwb_rx_msg.dest == 0)) {
+                if((uwb_rx_msg.src == 0)) {
                     uwb_set_state(TRANSMIT);
                     vTaskDelay(ANCHOR_ID*RANGING_TIME);
                     e = uwb_do_3way_ranging_with_node(20, anchor_pos);
-                    // float range;
-                    // e = uwb_do_4way_ranging_with_node(20, anchor_pos, &range);
 
                     if(e == UWB_SUCCESS)
                         packets++;

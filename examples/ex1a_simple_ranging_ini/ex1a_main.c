@@ -30,8 +30,6 @@ void appMain() {
 
 
 void uwb_initiator(void *parameters) {
-    uint32_t packet_cnt = 0;
-    uint32_t pkts_ok_100 = 0;
     uint32_t pkts_ok_1sec = 0;
 
     TickType_t xLastWakeTime, t1, t2;
@@ -43,28 +41,22 @@ void uwb_initiator(void *parameters) {
 
     t1 = xTaskGetTickCount();
     while(1) {
+        // DEBUG_PRINT("Time0: %d \n", xTaskGetTickCount());
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
 
         float range;
         uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, node_pos, &range);
 
-        if(e == UWB_SUCCESS) {
-            pkts_ok_100++;
+        if(e == UWB_SUCCESS) 
             pkts_ok_1sec++;
-        }
+        // else
+        //     DEBUG_PRINT("Error code: %d \n", e);
 
-        if(packet_cnt == 99) {
-            // DEBUG_PRINT("Successful out of 100: %d \n", pkts_ok_100);
-            pkts_ok_100 = 0;
-            packet_cnt = 0;
-        }
-        else
-            packet_cnt++;
-
+        // DEBUG_PRINT("Time1: %d \n", xTaskGetTickCount());
         t2 = xTaskGetTickCount();
-        if(t2 - t1 > 1000)
-        {
-            DEBUG_PRINT("Successful in 1sec: %d \n", pkts_ok_1sec);
+        if(t2 - t1 > 2000) {
+            float delta = (float)(t2 - t1) / 1000.0f;
+            DEBUG_PRINT("Successful in 1sec: %.1f  delta: %.2f \n", (float)pkts_ok_1sec / (float)delta, delta);
             pkts_ok_1sec = 0;
             t1 = xTaskGetTickCount();
         }
