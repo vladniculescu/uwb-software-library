@@ -27,8 +27,7 @@ void mission_drone_task(void* parameters);
 void print_task(void* parameters);
 void fly_task(void* parameters);
 
-void appMain()
-{
+void appMain() {
     vSemaphoreCreateBinary(printSemaphore);
     xSemaphoreGive(printSemaphore);
 
@@ -39,13 +38,9 @@ void appMain()
     xTaskCreate(fly_task, "flier", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
 }
 
-// float pos_x[] = {0.0, 2.0, -2.0, 2.0, 0.0};
-// float pos_y[] = {2.0, 2.0,  0.0, 0.0,-2.0};
-// float pos_z[] = {0.02, 0.02, 0.02, 0.02, 0.02};
-
-float pos_x[] = {1.4, 1.4, -1.4, -1.4, 2.0};
-float pos_y[] = {-1.1, 1.1,  1.1, -1.1, 0.0};
-float pos_z[] = {0.05, 0.05, 0.05, 0.05, 0.05};
+float pos_x[] = {-2.4, 2.4, 2.4, -2.4, 0.0};
+float pos_y[] = {1.5, 0.9,  -1.5, -1.5, 0.0};
+float pos_z[] = {0.02, 0.02, 0.02, 0.02, 0.02};
 
 float dist_log[10];
 
@@ -63,14 +58,19 @@ void registerAnchorDist(float x, float y, float z, float distance, float std_dev
 
 void mission_drone_task(void* parameters) {
     uwb_set_state(RECEIVE);
-    while(1)
-    {
+    int32_t var_id;
+    float altitude;
+    while(1) {
         if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS)) {
             xSemaphoreGive(printSemaphore);
             packets[last_range_msrm.src_id]++;
             packets_total++;
             dist_log[last_range_msrm.src_id] = last_range_msrm.range;
-            registerAnchorDist(pos_x[last_range_msrm.src_id], pos_y[last_range_msrm.src_id], pos_z[last_range_msrm.src_id], last_range_msrm.range, 0.5f);
+            var_id = logGetVarId("kalman", "stateZ");
+            altitude = logGetFloat(var_id);
+            if (altitude > 0.55f)
+                if (last_range_msrm.range > 0.1f)
+                    registerAnchorDist(pos_x[last_range_msrm.src_id], pos_y[last_range_msrm.src_id], pos_z[last_range_msrm.src_id], last_range_msrm.range, 0.5f);
         }   
     }
 }
@@ -80,7 +80,7 @@ void print_task(void* parameters) {
     TickType_t last_freq_print = xTaskGetTickCount();
     while(1) {
         if (xSemaphoreTake(printSemaphore, 200000 / portTICK_PERIOD_MS)) {
-            // DEBUG_PRINT("%.1f %.1f %.1f %.1f\n", pos_x[last_range_msrm.src_id], pos_y[last_range_msrm.src_id], pos_z[last_range_msrm.src_id], last_range_msrm.range);
+            DEBUG_PRINT("%.1f   %.1f   %.1f   %.1f \n", last_range_msrm.posx, last_range_msrm.posy, last_range_msrm.posz, last_range_msrm.range);
             if(xTaskGetTickCount() - last_freq_print > 2000) {
                 last_freq_print = xTaskGetTickCount();
                 for (uint8_t i=0; i<20; i++) {
@@ -102,4 +102,5 @@ LOG_ADD(LOG_FLOAT, d0, &dist_log[0])
 LOG_ADD(LOG_FLOAT, d1, &dist_log[1])
 LOG_ADD(LOG_FLOAT, d2, &dist_log[2])
 LOG_ADD(LOG_FLOAT, d3, &dist_log[3])
+LOG_ADD(LOG_FLOAT, d4, &dist_log[4])
 LOG_GROUP_STOP(UWB)

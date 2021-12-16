@@ -33,21 +33,30 @@ void fly_task(void* parameters) {
     vTaskDelay(1000);
     while(1) {
         vTaskDelay(300);
-        point_t endPos;
-        memset(&endPos, 0, sizeof(endPos));
-        endPos.x = 0;
-        endPos.y = 0;
-        endPos.z = 0.6f;
 
         while(!start)
             vTaskDelay(1000);
-        estimatorKalmanInit();
 
-        takeoff(0.6f);
-        flyToPoint(endPos);
-        flyCircle(endPos,0.6f,1);
-        flyToPoint(endPos);
+        estimatorKalmanInit();
+        point_t endPos;
+        memset(&endPos, 0, sizeof(endPos));
+        endPos.x = -1.0f;
+        endPos.y = 0.0f;
+
+        // endPos.x = 0.5f;
+        // endPos.y = 0.85f;
+
+        // endPos.x = 0.5f;
+        // endPos.y = -0.85f;
+
+        endPos.z = 0.8f;
+
+        takeoff(endPos.z);
+        // flyToPoint(endPos);
+        flyCircle(endPos,1.0f,1);
+        // flyToPoint(endPos);
         land();
+        break;
     }
 }
 
@@ -57,9 +66,9 @@ void flyCircle(point_t pos, float radius, float direction){
     uint16_t steps = distance/velocity*1000/100; //one step is 100ms
 
     for (int i = 0; i < steps; i++) {
-        float a = M_PI + i*2*M_PI/steps;
-        float x = (float)direction*(float)cos(a)*radius+direction*radius+pos.x;
-        float y = (float)direction*(float)sin(a)*radius+pos.y;
+        float a = M_PI + i*2*M_PI/steps + 4;
+        float x = (float)cos(a)*radius + radius + pos.x;
+        float y = (float)sin(a)*radius + pos.y;
         headToSetpoint(x, y, pos.z, 0);
         vTaskDelay(100);
     }

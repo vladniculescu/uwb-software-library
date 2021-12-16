@@ -23,7 +23,7 @@ extern TaskHandle_t uwbTaskHandle;
 SemaphoreHandle_t printSemaphore;
 
 uint32_t packets = 0;
-uint32_t ANCHOR_ID = 4;
+uint32_t ANCHOR_ID = 0;
 
 void anchor_task(void* parameters);
 void print_task(void* parameters);
@@ -43,16 +43,25 @@ void appMain() {
 
 void anchor_task(void* parameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    uint8_t anchor_pos[6];
+    uwb_node_coordinates_t anchor_pos;
     uwb_set_state(TRANSMIT);
     uwb_err_code_e e;
     TickType_t t0 = xTaskGetTickCount();
 
+    uint8_t mission_drone_counter = 20;
     while(1) {
         if(ANCHOR_ID == 0) {
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
-            e = uwb_do_3way_ranging_with_node(20, anchor_pos);
-            // DEBUG_PRINT("Err Code: %d \n", e);
+            
+            anchor_pos.x = -10;
+            anchor_pos.y = 1;
+            anchor_pos.z = 30;
+            e = uwb_do_3way_ranging_with_node(mission_drone_counter, anchor_pos);
+            if(mission_drone_counter == 22)
+                mission_drone_counter = 20;
+            else
+                mission_drone_counter++;
+
 
             if(e == UWB_SUCCESS)
                 packets++;
@@ -64,7 +73,8 @@ void anchor_task(void* parameters) {
                 if((uwb_rx_msg.src == 0)) {
                     uwb_set_state(TRANSMIT);
                     vTaskDelay(ANCHOR_ID*RANGING_TIME);
-                    e = uwb_do_3way_ranging_with_node(20, anchor_pos);
+
+                    e = uwb_do_3way_ranging_with_node(uwb_rx_msg.dest, anchor_pos);
 
                     if(e == UWB_SUCCESS)
                         packets++;

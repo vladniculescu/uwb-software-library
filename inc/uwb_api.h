@@ -10,12 +10,19 @@ struct UWB_message
     uint8_t src;
     uint8_t dest;
     uint8_t code;
-    uint8_t data[20];
+    uint8_t data[25];
     uint8_t data_len;
 };
 
 typedef struct UWB_message UWB_message;
 
+typedef int16_t uwb_coordinate_t;
+
+typedef struct {
+  uwb_coordinate_t x;
+  uwb_coordinate_t y;
+  uwb_coordinate_t z;
+} uwb_node_coordinates_t;
 
 struct UWB_measurement
 {
@@ -64,10 +71,10 @@ enum states {
 };
 
 uwb_err_code_e uwb_api_init(uint8_t node_id);
-uwb_err_code_e uwb_send_frame_wait_rsp(uint8_t* tx_msg, uint8_t msg_size, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len);
+uwb_err_code_e uwb_send_frame_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len);
 uwb_err_code_e uwb_send_frame(uint8_t* tx_msg, uint8_t msg_size, uint8_t ranging, uint32_t tx_delay);
-uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uint8_t* node_pos);
-uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uint8_t* node_pos, float* range_dst_mm);
+uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos);
+uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos, uint32_t* range_dst_mm);
 void uwb_check_for_errors(int8_t value);
 void uwb_set_state(uint8_t value);
 UWB_message decode_uwb_message(uint8_t* rx_buffer, uint8_t len);

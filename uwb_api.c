@@ -40,8 +40,10 @@ UWB_message uwb_rx_msg = {0};
 static TickType_t last_time_isr = 0;
 UWB_measurement last_range_msrm = {0};
 
-// FOR THE INITIATOR
+void uwb_enable_rx(void);
 
+#define RX_INTERRUPT_MASK (DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL)
+#define TX_INTERRUPT_MASK DWT_INT_TFRS
 
 //COMMON
 static uint8_t state = 0;
@@ -56,7 +58,7 @@ void uwb_receiver_task(void* parameters);
 void uwb_isr_task(void* parameters);
 uwb_err_code_e uwb_init();
 
-UWB_message decode_uwb_message(uint8_t* rx_buffer, uint8_t len) {
+UWB_message uwb_message_from_array(uint8_t* rx_buffer, uint8_t len) {
     struct UWB_message message = {0};
     message.ctrl = rx_buffer[0];
     message.src = rx_buffer[1];
@@ -67,6 +69,28 @@ UWB_message decode_uwb_message(uint8_t* rx_buffer, uint8_t len) {
         memcpy(message.data, &rx_buffer[4], message.data_len);
 
     return message;
+}
+
+void uwb_array_from_message(UWB_message msg, uint8_t* array) {
+    array[0] = 0xDE;
+    array[1] = msg.src;
+    array[2] = msg.dest;
+    array[3] = msg.code;
+    if (msg.data_len > 0)
+        memcpy(&array[4], msg.data, msg.data_len);
+}
+
+UWB_message uwb_message_create(uint8_t dest, uint8_t code, uint8_t* data, uint8_t data_len) {
+    UWB_message msg = {0};
+    msg.ctrl = 0xDE;
+    msg.src = ID;
+    msg.dest = dest;
+    msg.code = code;
+    if (data_len > 0)
+        memcpy(msg.data, &data[0], data_len);
+    msg.data_len = data_len;
+
+    return msg;
 }
 
 ///////////////////////////////////////////////////////  COMMON  ///////////////////////////////////////////////////////
@@ -185,15 +209,26 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
     if(cb_data->datalength <= RX_BUF_LEN)  
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);  // Read received frame into the local buffer
 
-    uwb_rx_msg = decode_uwb_message(rx_buffer, cb_data->datalength);
+    uwb_rx_msg = uwb_message_from_array(rx_buffer, cb_data->datalength);
 
     if(uwb_rx_msg.ctrl == 0xDE)
         xSemaphoreGive(msgReadySemaphore);
 
     // DEBUG_PRINT("%d dest %d, src %d, code %d \n", xTaskGetTickCount() % 10000, uwb_rx_msg.dest, uwb_rx_msg.src, uwb_rx_msg.code);
 
-    if((uwb_rx_msg.ctrl == 0xDE) && (uwb_rx_msg.dest == ID) && (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG)) {
+    if((uwb_rx_msg.ctrl == 0xDE) && (uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) || (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG))) {
             poll_rx_ts = get_rx_timestamp_u64();  // Get poll reception timestamp.
+
+            if(uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) {
+                int16_t x = uwb_rx_msg.data[1] * 256 + uwb_rx_msg.data[0];
+                int16_t y = uwb_rx_msg.data[3] * 256 + uwb_rx_msg.data[2];
+                int16_t z = uwb_rx_msg.data[5] * 256 + uwb_rx_msg.data[4];
+                last_range_msrm.posx = (float)x;
+                last_range_msrm.posy = (float)y;
+                last_range_msrm.posz = (float)z;
+            }
+            else
+                memset(&last_range_msrm, 0, sizeof(UWB_measurement));
 
             uint32_t resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;  // Calculate send delay time.
             dwt_setdelayedtrxtime(resp_tx_time);  // Schedule delayed transmission.
@@ -208,8 +243,8 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
             if(ret < UWB_SUCCESS) {
                 // xSemaphoreGive(rxSemaphore);
                 dwt_forcetrxoff();
-                uwb_enable_rx();
-                portYIELD();
+            uwb_enable_rx();
+            portYIELD();
             }
             dwt_setinterrupt(DWT_INT_TFRS, 2); 
             if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE)
@@ -217,8 +252,8 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
                 uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
                 if((status_reg & SYS_STATUS_TXFRS) == 0)
                     dwt_forcetrxoff();
-                    uwb_enable_rx();
-                    portYIELD();
+                uwb_enable_rx();
+                portYIELD();
             }
             dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2);
     }
@@ -266,8 +301,8 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
                 if(ret < UWB_SUCCESS) {
                     // xSemaphoreGive(rxSemaphore);
                     dwt_forcetrxoff();
-                    uwb_enable_rx();
-                    portYIELD();
+                uwb_enable_rx();
+                portYIELD();
                 }
 
                 dwt_setinterrupt(DWT_INT_TFRS, 2); 
@@ -276,8 +311,8 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
                     uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
                     if((status_reg & SYS_STATUS_TXFRS) == 0)
                         dwt_forcetrxoff();
-                        uwb_enable_rx();
-                        portYIELD();
+                    uwb_enable_rx();
+                    portYIELD();
                 }
                 dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2);
             }
@@ -352,19 +387,23 @@ void uwb_enable_rx(void) {
 
 
 ///////////////////////////////////////////////////////  INITIATOR  ///////////////////////////////////////////////////////
+uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expected) {
+    uint8_t tx_msg[30];
+    tx_msg[0] = 0xDE;
+    tx_msg[1] = msg.src;
+    tx_msg[2] = msg.dest;
+    tx_msg[3] = msg.code;
+    memcpy(&tx_msg[4], msg.data, msg.data_len);
+    uint8_t msg_size = msg.data_len + 6;
 
-uwb_err_code_e uwb_send_frame_wait_rsp(uint8_t* tx_msg, uint8_t msg_size, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len) {
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_TX); // Clear TX event bits
     dwt_writetxdata(msg_size, tx_msg, 0); // Zero offset in TX buffer
     dwt_writetxfctrl(msg_size, 0, 1); // Zero offset in TX buffer, ranging
 
-    int32_t ret, status_reg;
-    if(tx_delay > 0) { // Check if delayed TX is desired
+    uint8_t tx_config_mask = DWT_START_TX_IMMEDIATE + (tx_delay > 0) * DWT_START_TX_DELAYED + rsp_expected * DWT_RESPONSE_EXPECTED;
+    if(tx_delay > 0) 
         dwt_setdelayedtrxtime(tx_delay);
-        ret = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);  // TX starts - response expected
-    }
-    else
-        ret = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);  // TX starts - response expected
+    int32_t ret = dwt_starttx(tx_config_mask);
 
     if(ret < UWB_SUCCESS)
         return UWB_TX_ERROR;
@@ -372,28 +411,32 @@ uwb_err_code_e uwb_send_frame_wait_rsp(uint8_t* tx_msg, uint8_t msg_size, uint32
     dwt_setinterrupt(DWT_INT_TFRS, 2);
 
     if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) == pdFALSE) {
-        status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
+        uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
         if((status_reg & SYS_STATUS_TXFRS) == 0)
             dwt_forcetrxoff();
-            dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
-            return UWB_TX_ERROR;
-    }
-    else
         dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
+        return UWB_TX_ERROR;
+    }
+    dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2);
 
-    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE)
-    {
+    return UWB_SUCCESS;
+}
+
+
+uwb_err_code_e uwb_send_frame_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len) {
+    uwb_send_msg(msg, tx_delay, 1);
+    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
         dwt_forcetrxoff();
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame
         return UWB_RX_TIMEOUT;
     }
-    status_reg = dwt_read32bitreg(SYS_STATUS_ID);  // Read status register to check if the receive is valid
+    uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID);  // Read status register to check if the receive is valid
 
     if(status_reg & SYS_STATUS_RXFCG) {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame
         uint8_t frame_len = dwt_read32bitreg(RX_FINFO_ID) & RX_FINFO_RXFLEN_MASK;
         if (frame_len <= RX_BUF_LEN)
-        dwt_readrxdata(rx_buf, frame_len, 0);  // Read frame
+            dwt_readrxdata(rx_buf, frame_len, 0);  // Read frame
         *rx_buf_len = frame_len;
         return UWB_SUCCESS;
     }
@@ -423,8 +466,8 @@ uwb_err_code_e uwb_send_frame(uint8_t* tx_msg, uint8_t msg_size, uint8_t ranging
         uint32_t status = dwt_read32bitreg(SYS_STATUS_ID); 
         if((status & SYS_STATUS_TXFRS) == 0)
             dwt_forcetrxoff();
-            dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
-            return UWB_TX_ERROR;
+        dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
+        return UWB_TX_ERROR;
     }
     dwt_setinterrupt(DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL, 2); 
 
@@ -435,30 +478,26 @@ uwb_err_code_e uwb_send_frame(uint8_t* tx_msg, uint8_t msg_size, uint8_t ranging
 }
 
 
-uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uint8_t* node_pos) {
+uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos) {
     uint8_t rx_buffer_len;
     uint8_t rx_buffer[RX_BUF_LEN];
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
     uint8_t rx_ret, tx_ret;
-    if(node_pos[0]) {
-        uint8_t x_m = (node_pos[1] >> 8) & 0xFF;
-        uint8_t x_l = node_pos[2] & 0xFF;
-        uint8_t y_m = (node_pos[3] >> 8) & 0xFF;
-        uint8_t y_l = node_pos[4] & 0xFF;
-        uint8_t z_m = (node_pos[5] >> 8) & 0xFF;
-        uint8_t z_l = node_pos[6] & 0xFF;
-        uint8_t tx_poll_msg[] = {0xDE, ID, target_id, UWB_RANGE_INIT_NO_COORDS_MSG, x_m, x_l, y_m, y_l, z_m, z_l, 0, 0};
-        rx_ret = uwb_send_frame_wait_rsp(tx_poll_msg, sizeof(tx_poll_msg), 0, rx_buffer, &rx_buffer_len);
+
+    UWB_message msg = {0};
+    if(1) {
+        msg = uwb_message_create(target_id, UWB_RANGE_INIT_WITH_COORDS_MSG, &node_pos, 3*sizeof(uwb_node_coordinates_t));
+        rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
     }
     else {
-        uint8_t tx_poll_msg[] = {0xDE, ID, target_id, UWB_RANGE_INIT_NO_COORDS_MSG, 0, 0};
-        rx_ret = uwb_send_frame_wait_rsp(tx_poll_msg, sizeof(tx_poll_msg), 0, rx_buffer, &rx_buffer_len);
+        msg = uwb_message_create(target_id, UWB_RANGE_INIT_NO_COORDS_MSG, NULL, 0);
+        rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
     }
 
     if(rx_ret != UWB_SUCCESS)
         return UWB_RX_ERROR;
 
-    UWB_message rx_message = decode_uwb_message(rx_buffer, rx_buffer_len);
+    UWB_message rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len);
     if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
         uint64_t poll_tx_ts = get_tx_timestamp_u64();  // Poll transmission timestamp
         uint64_t resp_rx_ts = get_rx_timestamp_u64();  // Response transmission timestamp
@@ -481,30 +520,29 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uint8_t* node_po
     return UWB_INVALID_RSP;
 }
 
-uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uint8_t* node_pos, float* range_dst_mm) {
+uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos, uint32_t* range_dst_mm) {
     uint8_t rx_buffer_len;
     uint8_t rx_buffer[RX_BUF_LEN];
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
     uint8_t rx_ret, tx_ret;
-    if(node_pos[0]) {
-        uint8_t x_m = (node_pos[1] >> 8) & 0xFF;
-        uint8_t x_l = node_pos[2] & 0xFF;
-        uint8_t y_m = (node_pos[3] >> 8) & 0xFF;
-        uint8_t y_l = node_pos[4] & 0xFF;
-        uint8_t z_m = (node_pos[5] >> 8) & 0xFF;
-        uint8_t z_l = node_pos[6] & 0xFF;
-        uint8_t tx_poll_msg[] = {0xDE, ID, target_id, UWB_RANGE_INIT_NO_COORDS_MSG, x_m, x_l, y_m, y_l, z_m, z_l, 0, 0};
-        rx_ret = uwb_send_frame_wait_rsp(tx_poll_msg, sizeof(tx_poll_msg), 0, rx_buffer, &rx_buffer_len);
+
+    UWB_message msg = {0};
+    msg.ctrl = 0xDE;
+    msg.src = ID;
+    msg.dest = target_id;
+    if(0) {
+        msg = uwb_message_create(target_id, UWB_RANGE_INIT_WITH_COORDS_MSG, &node_pos, 3*sizeof(uwb_node_coordinates_t));
+        rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
     }
     else {
-        uint8_t tx_poll_msg[] = {0xDE, ID, target_id, UWB_RANGE_INIT_NO_COORDS_MSG, 0, 0};
-        rx_ret = uwb_send_frame_wait_rsp(tx_poll_msg, sizeof(tx_poll_msg), 0, rx_buffer, &rx_buffer_len);
+        msg = uwb_message_create(target_id, UWB_RANGE_INIT_NO_COORDS_MSG, NULL, 0);
+        rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
     }
 
     if(rx_ret != UWB_SUCCESS)
         return rx_ret;
 
-    UWB_message rx_message = decode_uwb_message(rx_buffer, rx_buffer_len);
+    UWB_message rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len);
     if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
         uint64_t poll_tx_ts = get_tx_timestamp_u64();  // Poll transmission timestamp
         uint64_t resp_rx_ts = get_rx_timestamp_u64();  // Response transmission timestamp
@@ -513,21 +551,26 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uint8_t* node_po
         uint64_t final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;  // Final TX timestamp = tx time we programmed plus the TX antenna delay. 
 
         // Write all timestamps in the final message.
-        uint8_t tx_final_msg[] = {0xDE, ID, target_id, UWB_RANGE_4WAY_FINAL_MSG, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-        var_to_8b_array(&tx_final_msg[4], 4, poll_tx_ts);
-        var_to_8b_array(&tx_final_msg[8], 4, resp_rx_ts);
-        var_to_8b_array(&tx_final_msg[12], 4, final_tx_ts);
+        msg.ctrl = 0xDE;
+        msg.src = ID;
+        msg.dest = target_id;
+        msg.code = UWB_RANGE_4WAY_FINAL_MSG;
+        msg.data_len = 12;
+
+        // uint8_t tx_final_msg[] = {0xDE, ID, target_id, UWB_RANGE_4WAY_FINAL_MSG, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        var_to_8b_array(&msg.data[0], 4, poll_tx_ts);
+        var_to_8b_array(&msg.data[4], 4, resp_rx_ts);
+        var_to_8b_array(&msg.data[8], 4, final_tx_ts);
 
         memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
-        rx_ret = uwb_send_frame_wait_rsp(tx_final_msg, sizeof(tx_final_msg), final_tx_time, rx_buffer, &rx_buffer_len);
+        rx_ret = uwb_send_frame_wait_rsp(msg, final_tx_time, rx_buffer, &rx_buffer_len);
         if(rx_ret != UWB_SUCCESS)
             return rx_ret;
 
-        rx_message = decode_uwb_message(rx_buffer, rx_buffer_len);
+        rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len);
 
         if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_4WAY_RESULT_MSG)) {
-            float data = (float)(rx_message.data[0] * 256 + rx_message.data[1]);
-            *range_dst_mm = data;
+            *range_dst_mm = (uint32_t)(rx_message.data[0] * 256 + rx_message.data[1]);
             return UWB_SUCCESS;
         }
 
