@@ -4,14 +4,13 @@ APP_STACKSIZE=3000
 CRAZYFLIE_BASE=../../../crazyflie-firmware
 UWB_API_BASE=../..
 
-ID ?= 0
-PX ?= 0
-PY ?= 0
-PZ ?= 0
-CFLAGS += -DNODE_ID=$(ID) -DPOSX=$(PX) -DPOSX=$(PY) -DPOSX=$(PZ)
+# ID ?= 0
+# PX ?= 0
+# PY ?= 0
+# PZ ?= 0
+# CFLAGS += -DNODE_ID=$(ID) -DPOSX=$(PX) -DPOSX=$(PY) -DPOSX=$(PZ)
 
-$(info    ID is $(ID))
-# $(info    X: $(PX), Y: $(PY), Z: $(PZ))
+# $(info    ID is $(ID))
 
 # Decawave API
 VPATH += $(UWB_API_BASE)/

@@ -12,94 +12,87 @@
 #include "estimator_kalman.h"
 #include "commander.h"
 #include "param.h"
+#include "config_params.h"
 
-#define PI 3.1415926f
-
-float velocity = 0.3f;
-float radius = 0.5f;
-static setpoint_t setpoint;
-uint8_t start = 0;
-
-
-void flyCircle(point_t pos, float radius, float direction);
 void takeoff(float height);
 void land(void);
 void flyToPoint(point_t endPos);
 void headToSetpoint(float x, float y, float z, float yaw);
 void positionSet(setpoint_t *setpoint, float x, float y, float z, float yaw);
+void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms);
+
+uint8_t start = 0;
 
 void fly_task(void* parameters) {
-    DEBUG_PRINT("Flytask started!\n");
+    DEBUG_PRINT("Fly task started!\n");
     vTaskDelay(1000);
     while(1) {
-        vTaskDelay(300);
 
         while(!start)
             vTaskDelay(1000);
 
+        // Reset estimator
         estimatorKalmanInit();
-        point_t endPos;
-        memset(&endPos, 0, sizeof(endPos));
-        endPos.x = -1.0f;
-        endPos.y = 0.0f;
 
-        // endPos.x = 0.5f;
-        // endPos.y = 0.85f;
+        // Define trajectory circle parameters
+        point_t circle_center;
+        memset(&circle_center, 0, sizeof(circle_center));
+        float radius = 1.0f;
+        circle_center.x = 0.0f;
+        circle_center.y = 0.0f;
+        circle_center.z = 0.8f;
 
-        // endPos.x = 0.5f;
-        // endPos.y = -0.85f;
+        // Define target point
+        point_t start_point = circle_center;
+        start_point.x = radius;
 
-        endPos.z = 0.8f;
+        // Take off and fly to phase 0 on the circle
+        takeoff(start_point.z);
+        flyToPoint(start_point);
 
-        takeoff(endPos.z);
-        // flyToPoint(endPos);
-        flyCircle(endPos,1.0f,1);
-        // flyToPoint(endPos);
+        // Fly circle
+        flyCircle(circle_center, radius, 0.0f, 10000);
         land();
         break;
     }
 }
 
-
-void flyCircle(point_t pos, float radius, float direction){
-    float distance = 2.0f*PI*radius;
-    uint16_t steps = distance/velocity*1000/100; //one step is 100ms
-
-    for (int i = 0; i < steps; i++) {
-        float a = M_PI + i*2*M_PI/steps + 4;
-        float x = (float)cos(a)*radius + radius + pos.x;
-        float y = (float)sin(a)*radius + pos.y;
-        headToSetpoint(x, y, pos.z, 0);
-        vTaskDelay(100);
+void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms){
+    uint32_t step_delay_ms = 40;
+    uint32_t steps = duration_ms / step_delay_ms;
+    float loop_progress;
+    phase = phase * (float)M_PI / 180.0f;
+    for (uint32_t i = 0; i < steps; i++) {
+        loop_progress = (float)i / (float)steps;
+        float angle = loop_progress * 2 * (float)M_PI + phase;
+        float x = (float)cos(angle) * radius + center.x;
+        float y = (float)sin(angle) * radius + center.y;
+        headToSetpoint(x, y, center.z, 0);
+        DEBUG_PRINT("%.2f, %.2f \n", x, y);
+        vTaskDelay(step_delay_ms);
     }
 }
 
-void takeoff(float height)
-{
+
+void takeoff(float height) {
     point_t pos;
     memset(&pos, 0, sizeof(pos));
     estimatorKalmanGetEstimatedPos(&pos);
 
-    int endheight = (int)(100*(height-0.4f));
-    for(int i=0; i<endheight; i++)
-    {
-        headToSetpoint(pos.x, pos.y, 0.4f + (float)i / 100.0f, 0);
-        headToSetpoint(0.0f, 0.0f, 0.4f + (float)i / 100.0f, 0);
-
+    uint32_t endheight = (uint32_t)(100 * (height - 0.3f));
+    for(uint32_t i=0; i<endheight; i++) {
+        headToSetpoint(pos.x, pos.y, 0.3f + (float)i / 100.0f, 0);
         vTaskDelay(30);
     }
-
 }
 
-void land(void){
-
+void land(void) {
     point_t pos;
     memset(&pos, 0, sizeof(pos));
     estimatorKalmanGetEstimatedPos(&pos);
 
     float height = pos.z;
-    for(int i=(int)100*height; i>18; i--)
-    {
+    for(int i=(int)100*height; i>18; i--) {
         headToSetpoint(pos.x, pos.y, (float)i / 100.0f, 0);
         vTaskDelay(100);
     }
@@ -109,32 +102,36 @@ void land(void){
     motorsSetRatio(MOTOR_M3, 0);
     motorsSetRatio(MOTOR_M4, 0);
     vTaskDelay(200);
-
 }
 
-void flyToPoint(point_t endPos){
+void flyToPoint(point_t targetPos){
+    float avg_vel = 0.5f;
+    uint32_t step_delay_ms = 40;
+
     point_t startPos;
     memset(&startPos, 0, sizeof(startPos));
     estimatorKalmanGetEstimatedPos(&startPos);
 
-    float distX = endPos.x-startPos.x;
-    float distY = endPos.y-startPos.y;
-    float distance = sqrt(pow(distX,2)+pow(distY,2));
+    float distX = targetPos.x - startPos.x;
+    float distY = targetPos.y - startPos.y;
+    float distance = sqrtf(powf(distX, 2) + powf(distY, 2));
 
-    uint16_t steps = distance/velocity*1000/100; //one step is 100ms
+    float avg_time = 1000.0f * distance / avg_vel;
 
-    for (int i = 0; i < steps; i++) {
-        headToSetpoint(startPos.x+i*distX/steps, startPos.y+i*distY/steps, endPos.z, 0);
-        vTaskDelay(100);
+    uint32_t steps = (uint32_t)(avg_time / (float) step_delay_ms);
+    for (uint32_t i = 0; i < steps; i++) {
+        headToSetpoint(startPos.x + i * distX / steps, startPos.y + i * distY / steps, targetPos.z, 0);
+        vTaskDelay(step_delay_ms);
     }
-    for (int i = 0; i < 20; i++) {
-        headToSetpoint(endPos.x, endPos.y, endPos.z, 0);
-        vTaskDelay(100);
+    for (uint32_t i = 0; i < 20; i++) {
+        headToSetpoint(targetPos.x, targetPos.y, targetPos.z, 0);
+        vTaskDelay(step_delay_ms);
     }
 }
 
 void headToSetpoint(float x, float y, float z, float yaw)
 {
+    setpoint_t setpoint;
     positionSet(&setpoint, x, y, z, yaw);
     commanderSetSetpoint(&setpoint, 3);
 }

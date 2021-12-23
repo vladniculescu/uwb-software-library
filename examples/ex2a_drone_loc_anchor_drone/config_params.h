@@ -1,4 +1,4 @@
-#define ANCHOR_ID 3
+#define ANCHOR_ID 0
 
 #define MD_FIRST_ID 20
 #define NR_OF_MD 1

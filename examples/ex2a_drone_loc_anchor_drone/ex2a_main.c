@@ -1,5 +1,3 @@
-#define DEBUG_MODULE "AD"
-
 #include "deck.h"
 #include "debug.h"
 #include <string.h>
@@ -9,11 +7,10 @@
 #include "task.h"
 #include "semphr.h"
 #include "uwb_api.h"
-#include "deca_device_api.h"
+#include "stm32f4xx_tim.h"
+#include "config_params.h"
 
-
-#define NR_OF_ANCHORS 5
-#define RANGING_TIME 3
+#define DEBUG_MODULE "AD"
 
 extern SemaphoreHandle_t msgReadySemaphore;
 extern SemaphoreHandle_t msrmReadySemaphore;
@@ -22,8 +19,7 @@ extern TaskHandle_t uwbTaskHandle;
 
 SemaphoreHandle_t printSemaphore;
 
-uint32_t packets = 0;
-uint32_t ANCHOR_ID = 0;
+int32_t packets = 0;
 
 void anchor_task(void* parameters);
 void print_task(void* parameters);
@@ -34,34 +30,61 @@ void appMain() {
     xSemaphoreGive(printSemaphore);
 
     uwb_api_init(ANCHOR_ID);
-    xTaskCreate(anchor_task, "anchor", configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle);
+    xTaskCreate(anchor_task, "anchor", 2*configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle);
     xTaskCreate(print_task, "printer", configMINIMAL_STACK_SIZE, NULL, 0, NULL);
 
     while(1)
         vTaskDelay(10000);
 }
 
+
+// void EnableTimerInterrupt()
+// {
+//     NVIC_InitTypeDef nvicStructure;
+//     nvicStructure.NVIC_IRQChannel = TIM2_IRQn;
+//     nvicStructure.NVIC_IRQChannelPreemptionPriority = 0;
+//     nvicStructure.NVIC_IRQChannelSubPriority = 1;
+//     nvicStructure.NVIC_IRQChannelCmd = ENABLE;
+//     NVIC_Init(&nvicStructure);
+// }
+
+// void timer5_init() {
+//     // Enable the peripheral clock
+//     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM6, ENABLE);
+
+//     // Configure the timebase
+//     TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+//     TIM_TimeBaseInitStructure.TIM_Prescaler = 1;
+//     TIM_TimeBaseInitStructure.TIM_Period = 35999;
+//     TIM_TimeBaseInit(TIM6, &TIM_TimeBaseInitStructure);
+
+//     // That last function caused the UIF flag to get set. Clear it.
+//     TIM_ClearITPendingBit(TIM6, TIM_IT_Update);
+
+//     // Configure so that the interrupt flag is only set upon overflow
+//     TIM_UpdateRequestConfig(TIM6, TIM_UpdateSource_Regular);
+
+//     // Enable the TIM5 Update Interrupt type
+//     TIM_ITConfig(TIM6, TIM_IT_Update, ENABLE);
+// }
+
 void anchor_task(void* parameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     uwb_node_coordinates_t anchor_pos;
     uwb_set_state(TRANSMIT);
     uwb_err_code_e e;
-    TickType_t t0 = xTaskGetTickCount();
 
-    uint8_t mission_drone_counter = 20;
+    uint8_t md_counter = MD_FIRST_ID;
+
+    // timer5_init();
     while(1) {
         if(ANCHOR_ID == 0) {
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
-            
-            anchor_pos.x = -10;
-            anchor_pos.y = 1;
-            anchor_pos.z = 30;
-            e = uwb_do_3way_ranging_with_node(mission_drone_counter, anchor_pos);
-            if(mission_drone_counter == 22)
-                mission_drone_counter = 20;
+            e = uwb_do_3way_ranging_with_node(md_counter, anchor_pos);
+            if(md_counter == (MD_FIRST_ID + NR_OF_MD - 1))
+                md_counter = MD_FIRST_ID;
             else
-                mission_drone_counter++;
-
+                md_counter++;
 
             if(e == UWB_SUCCESS)
                 packets++;
@@ -78,7 +101,6 @@ void anchor_task(void* parameters) {
 
                     if(e == UWB_SUCCESS)
                         packets++;
-                    t0 = xTaskGetTickCount();
                     xSemaphoreGive(printSemaphore);
                 }
             }
