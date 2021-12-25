@@ -4,13 +4,16 @@
 #include "deca_regs.h"
 #include "dwm_utils.h"
 
+#define RX_BUF_LEN 24
+#define MSG_DATA_LEN (RX_BUF_LEN - 6)
+
 struct UWB_message
 {
     uint8_t ctrl;
     uint8_t src;
     uint8_t dest;
     uint8_t code;
-    uint8_t data[25];
+    uint8_t data[MSG_DATA_LEN];
     uint8_t data_len;
 };
 
