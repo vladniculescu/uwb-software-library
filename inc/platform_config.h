@@ -13,5 +13,6 @@
 void init_io(void);
 void enable_uwb_int(void);
 void disable_uwb_int(void);
+void reset_dw(void);
 
 #endif

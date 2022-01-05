@@ -1,8 +1,13 @@
+#include "system.h"
+#include <string.h>
+#include <math.h>
+#include <stdlib.h>
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include "queue.h"
 
-#include "system.h"
 #include "debug.h"
 #include "deck.h"
 #include "commander.h"
@@ -15,84 +20,31 @@
 
 #include "deca_device_api.h"
 
-#include <string.h>
-#include <math.h>
-#include <stdlib.h>
-
 #include "uwb_timing.h"
 #include "dwm_config.h"
 #include "uwb_api.h"
+#include "uwb_api_internal.h"
+#include "uwb_api_message_utils.h"
 #include "platform_config.h"
 
+
 ///////////////////////////////////////////////////////  GLOBAL VARS  ///////////////////////////////////////////////////////
-
-// EXTERN
-TaskHandle_t uwbTaskHandle = 0;
-TaskHandle_t uwbTaskHandle_rx = 0;
-SemaphoreHandle_t rxSemaphore;
-SemaphoreHandle_t msgReadySemaphore;
-SemaphoreHandle_t msrmReadySemaphore;
-SemaphoreHandle_t isrSemaphore;
-
-// FOR THE RESPONDER
-static uint64_t poll_rx_ts;
-UWB_message uwb_rx_msg = {0};
-static TickType_t last_time_isr = 0;
-UWB_measurement last_range_msrm = {0};
-
-void uwb_enable_rx(void);
 
 #define RX_INTERRUPT_MASK (DWT_INT_RFCG | DWT_INT_RFTO | DWT_INT_RPHE | DWT_INT_SFDT | DWT_INT_RXPTO | DWT_INT_RFCE | DWT_INT_RFSL)
 #define TX_INTERRUPT_MASK DWT_INT_TFRS
 
-//COMMON
-static uint8_t state = 0;
+TaskHandle_t uwbTaskHandle = 0;
+TaskHandle_t uwbTaskHandle_rx = 0;
+SemaphoreHandle_t rxSemaphore;
+QueueHandle_t msrmRcvQueue;
+QueueHandle_t msgRcvQueue;
+
+static uint64_t poll_rx_ts;
+static UWB_measurement uwb_msrm = {0};
+
+static uint8_t responder_on = 1;
 static uint8_t ID = 0;
 
-// FUNCTION HEADERS
-void rx_ok_cb(const dwt_cb_data_t *cb_data);
-void tx_conf_cb(const dwt_cb_data_t *cb_data);
-void rx_to_cb(const dwt_cb_data_t *cb_data);
-void rx_err_cb(const dwt_cb_data_t *cb_data);
-void uwb_receiver_task(void* parameters);
-void uwb_isr_task(void* parameters);
-uwb_err_code_e uwb_init();
-uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expected);
-
-UWB_message uwb_message_from_array(uint8_t* rx_buffer, uint8_t len) {
-    struct UWB_message message = {0};
-    message.ctrl = rx_buffer[0];
-    message.src = rx_buffer[1];
-    message.dest = rx_buffer[2];
-    message.code = rx_buffer[3];
-    message.data_len = len - 4 - 2;
-    if((message.data_len > 0) && (message.data_len < RX_BUF_LEN - 4 - 2))
-        memcpy(message.data, &rx_buffer[4], message.data_len);
-
-    return message;
-}
-
-void uwb_array_from_message(UWB_message msg, uint8_t* array) {
-    array[0] = 0xDE;
-    array[1] = msg.src;
-    array[2] = msg.dest;
-    array[3] = msg.code;
-    if (msg.data_len > 0)
-        memcpy(&array[4], msg.data, msg.data_len);
-}
-
-UWB_message uwb_message_create(uint8_t dest, uint8_t code, uint8_t* data, uint8_t data_len) {
-    UWB_message msg = {0};
-    msg.ctrl = 0xDE;
-    msg.src = ID;
-    msg.dest = dest;
-    msg.code = code;
-    if (data_len > 0)
-        memcpy(msg.data, &data[0], data_len);
-    msg.data_len = data_len;
-
-    return msg;
-}
 
 ///////////////////////////////////////////////////////  COMMON  ///////////////////////////////////////////////////////
 uwb_err_code_e uwb_init() {
@@ -105,7 +57,7 @@ uwb_err_code_e uwb_init() {
 
     dwt_configure(&config);  // send configuration to the UWB module
 
-    dwt_setcallbacks(&tx_conf_cb, &rx_ok_cb, &rx_to_cb, &rx_err_cb);  // assign callbacks
+    dwt_setcallbacks(&tx_ok_cb, &rx_ok_cb, &rx_err_to_cb, &rx_err_to_cb);  // assign callbacks
     dwt_setinterrupt(RX_INTERRUPT_MASK, 2); 
 
     // Set antenna delays
@@ -138,13 +90,10 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
     set_spi_speed(1);
 
     vSemaphoreCreateBinary(rxSemaphore);
-    vSemaphoreCreateBinary(msgReadySemaphore);
-    vSemaphoreCreateBinary(msrmReadySemaphore);
-    vSemaphoreCreateBinary(isrSemaphore);
     xSemaphoreGive(rxSemaphore);
-    xSemaphoreGive(msgReadySemaphore);
-    xSemaphoreGive(msrmReadySemaphore);
-    xSemaphoreGive(isrSemaphore);
+
+    msrmRcvQueue = xQueueCreate(1, sizeof(UWB_measurement));
+    msgRcvQueue = xQueueCreate(1, sizeof(UWB_message));
 
     xTaskCreate(uwb_isr_task, "UWB-rx-isr",  2*configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle_rx);
     vTaskDelay(10);
@@ -155,37 +104,13 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
 }
 
 
-void uwb_set_state(uint8_t value) { //TODO - set mode; get rid of this, use rx en / rx disable
-    switch(value) 
-    {
-        case RECEIVE:
-            state = RECEIVE;
-            dwt_forcetrxoff();
-            dwt_setrxtimeout(0);
-            dwt_rxenable(DWT_START_RX_IMMEDIATE);
-            break; 
-            
-        case TRANSMIT:
-            state = TRANSMIT;
-            dwt_forcetrxoff();
-            dwt_setrxtimeout(RX_TIMEOUT_UUS);
-            break; 
-
-        case IDLE:
-            state = IDLE;
-            dwt_forcetrxoff();
-            break;
-    }
-}
-
-
 void __attribute__((used)) EXTI11_Callback(void) {
     portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 
     NVIC_ClearPendingIRQ(EXTI_IRQChannel);
     EXTI_ClearITPendingBit(EXTI_LineN);
 
-    if(state==RECEIVE) {
+    if(responder_on == 1) {
         vTaskNotifyGiveFromISR(uwbTaskHandle_rx, &xHigherPriorityTaskWoken); 
     }
     else {
@@ -201,7 +126,8 @@ void __attribute__((used)) EXTI11_Callback(void) {
 // RX ok callback
 void rx_ok_cb(const dwt_cb_data_t *cb_data) {  
     uint8_t rx_buffer[RX_BUF_LEN];
-    UWB_message tx_msg = {0};
+    UWB_message uwb_tx_msg = {0};
+    UWB_message uwb_rx_msg = {0};
 
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG);  // Clear good RX frame event
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));  // Clear local RX buffer 
@@ -211,30 +137,32 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
 
     uwb_rx_msg = uwb_message_from_array(rx_buffer, cb_data->datalength); // TODO check
 
-    if(uwb_rx_msg.ctrl == 0xDE)
-        xSemaphoreGive(msgReadySemaphore);
+    if(uwb_rx_msg.ctrl != 0xDE) {
+        uwb_enable_rx();
+        return;
+    }
 
-    if((uwb_rx_msg.ctrl == 0xDE) && (uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) || (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG))) {
+    if((uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) || (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG))) {
         poll_rx_ts = get_rx_timestamp_u64();  // Get poll reception timestamp.
 
         if(uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) {
-            last_range_msrm.posx = (float)*(int16_t*)&uwb_rx_msg.data[0];
-            last_range_msrm.posy = (float)*(int16_t*)&uwb_rx_msg.data[2];
-            last_range_msrm.posz = (float)*(int16_t*)&uwb_rx_msg.data[4];
+            uwb_msrm.posx = (float)*(int16_t*)&uwb_rx_msg.data[0];
+            uwb_msrm.posy = (float)*(int16_t*)&uwb_rx_msg.data[2];
+            uwb_msrm.posz = (float)*(int16_t*)&uwb_rx_msg.data[4];
         }
         else
-            memset(&last_range_msrm, 0, sizeof(UWB_measurement));
+            memset(&uwb_msrm, 0, sizeof(UWB_measurement));
 
         uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;  // Calculate send delay time.
         dwt_setdelayedtrxtime(resp_tx_time);  // Schedule delayed transmission.
 
         dwt_setrxtimeout(RX_TIMEOUT_UUS);  // Set timeout for final message reception.
 
-        tx_msg = uwb_message_create(uwb_rx_msg.src, UWB_RANGE_RSP_MSG, NULL, 0);
-        uwb_err_code_e e = uwb_send_msg(tx_msg, resp_tx_time, 1);
+        uwb_tx_msg = uwb_message_create(uwb_rx_msg.src, ID, UWB_RANGE_RSP_MSG, NULL, 0);
+        uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 1);
 
     }
-    else if((uwb_rx_msg.ctrl == 0xDE) && (uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_3WAY_FINAL_MSG) || (uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG))) {
+    else if((uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_3WAY_FINAL_MSG) || (uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG))) {
         dwt_setleds(DWT_LEDS_ENABLE);  // Enable LEDs for visual feedback.
 
         uint64_t resp_tx_ts = get_tx_timestamp_u64();  // Retrieve response transmission timestamp.
@@ -258,10 +186,9 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
         double tof = tof_dtu * DWT_TIME_UNITS;
 
         float dist = (float)(tof * SPEED_OF_LIGHT);  // Calculate distance in meters.
-        last_range_msrm.range = dist;
-        last_range_msrm.src_id = uwb_rx_msg.src;
+        uwb_msrm.range = dist;
+        uwb_msrm.src_id = uwb_rx_msg.src;
         uint32_t distance_int = (uint32_t)(dist * 1000);  // Calculate distance in mm.
-        xSemaphoreGive(msrmReadySemaphore);
 
         if(uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG) {  // If the Initiator requests the range value back.
             uint8_t range_two_bytes[] = {(distance_int >> 8) & 0xFF,  distance_int & 0xFF};
@@ -269,33 +196,25 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
             poll_rx_ts = get_rx_timestamp_u64();
             uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
 
-            tx_msg = uwb_message_create(uwb_rx_msg.src, UWB_RANGE_4WAY_RESULT_MSG, &range_two_bytes[0], 2);
-            uwb_err_code_e e = uwb_send_msg(tx_msg, resp_tx_time, 1);
+            uwb_tx_msg = uwb_message_create(uwb_rx_msg.src, ID, UWB_RANGE_4WAY_RESULT_MSG, &range_two_bytes[0], 2);
+            uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 1);
         }
+        send_msrm_to_queue(uwb_msrm);
     }
+    else 
+        send_msg_to_queue(uwb_rx_msg);
 
     uwb_enable_rx();    
 }
 
 
 // TX succesful callback
-void tx_conf_cb(const dwt_cb_data_t *cb_data) {
+void tx_ok_cb(const dwt_cb_data_t *cb_data) {
 }
 
 
 // RX timeout callback
-void rx_to_cb(const dwt_cb_data_t *cb_data) {
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-        dwt_rxreset();
-    
-        // xSemaphoreGive(rxSemaphore);
-        uwb_enable_rx();
-        portYIELD();
-}
-
-
-// RX error callback
-void rx_err_cb(const dwt_cb_data_t *cb_data) {
+void rx_err_to_cb(const dwt_cb_data_t *cb_data) {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
         dwt_rxreset();
     
@@ -308,10 +227,7 @@ void rx_err_cb(const dwt_cb_data_t *cb_data) {
 void uwb_isr_task(void* parameters) {
     while(1) {
         if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200000)) > 0) {
-            if(state == RECEIVE) {
-                last_time_isr = xTaskGetTickCount();
-                dwt_isr();
-            }   
+            dwt_isr();
         }
     }
 }
@@ -321,6 +237,72 @@ void uwb_enable_rx(void) {
     dwt_setrxtimeout(0);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
+
+
+void uwb_responder_on(void) {
+    responder_on = 1;
+    dwt_forcetrxoff();
+    uwb_enable_rx();
+}
+
+
+void uwb_responder_off(void) {
+    responder_on = 0;
+    dwt_forcetrxoff();
+}
+
+
+uwb_err_code_e get_msrm_from_queue(UWB_measurement* msrm, TickType_t timeout_ms) {
+    if( msrmRcvQueue != NULL ) {
+        if(xQueueReceive(msrmRcvQueue, msrm, (TickType_t) timeout_ms) == pdTRUE) {
+            return UWB_SUCCESS;
+        }
+        else return UWB_RX_TIMEOUT;
+    }
+    else return UWB_ERROR;
+}
+
+
+uwb_err_code_e send_msrm_to_queue(UWB_measurement msrm) {
+    UBaseType_t nr_of_elements;
+    if( msrmRcvQueue != NULL ) {
+        nr_of_elements = uxQueueSpacesAvailable(msrmRcvQueue);
+        if(nr_of_elements == 0)
+            xQueueReset(msrmRcvQueue);
+        
+        if(xQueueSendToBack(msrmRcvQueue, (void*)&msrm, (TickType_t) 0) == pdTRUE) {
+            return UWB_SUCCESS;
+        }
+    }
+    return UWB_ERROR;
+}
+
+
+uwb_err_code_e get_msg_from_queue(UWB_message* msg, TickType_t timeout_ms) {
+    if( msgRcvQueue != NULL ) {
+        if(xQueueReceive(msgRcvQueue, msg, (TickType_t) timeout_ms) == pdTRUE) {
+            return UWB_SUCCESS;
+        }
+        return UWB_RX_TIMEOUT;
+    }
+    return UWB_ERROR;
+}
+
+
+uwb_err_code_e send_msg_to_queue(UWB_message msg) {
+    UBaseType_t nr_of_elements;
+    if( msgRcvQueue != NULL ) {
+        nr_of_elements = uxQueueSpacesAvailable(msgRcvQueue);
+        if(nr_of_elements == 0)
+            xQueueReset(msgRcvQueue);
+        
+        if(xQueueSendToBack(msgRcvQueue, (void*)&msg, (TickType_t) 0) == pdTRUE) {
+            return UWB_SUCCESS;
+        }
+    }
+    return UWB_ERROR;
+}
+
 
 
 ///////////////////////////////////////////////////////  INITIATOR  ///////////////////////////////////////////////////////
@@ -336,6 +318,7 @@ uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expe
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_TX); // Clear TX event bits
     dwt_writetxdata(msg_size, tx_msg, 0); // Zero offset in TX buffer
     dwt_writetxfctrl(msg_size, 0, 1); // Zero offset in TX buffer, ranging
+    dwt_setrxtimeout(RX_TIMEOUT_UUS);
 
     uint8_t tx_config_mask = DWT_START_TX_IMMEDIATE + (tx_delay > 0) * DWT_START_TX_DELAYED + rsp_expected * DWT_RESPONSE_EXPECTED;
     if(tx_delay > 0) 
@@ -391,13 +374,12 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
     uint8_t rx_ret, tx_ret;
 
-    UWB_message msg = uwb_message_create(target_id, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
+    UWB_message msg = uwb_message_create(target_id, ID, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
     rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
 
     if(rx_ret != UWB_SUCCESS)
         return UWB_RX_ERROR;
 
-    // DEBUG_PRINT("frame len: %d \n", rx_buffer_len);
     UWB_message rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len); // TODO
     if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
         uint64_t poll_tx_ts = get_tx_timestamp_u64();  // Poll transmission timestamp
@@ -407,7 +389,7 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
         uint64_t final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;  // Final TX timestamp = tx time we programmed plus the TX antenna delay. 
 
         // Write all timestamps in the final message.
-        msg = uwb_message_create(target_id, UWB_RANGE_3WAY_FINAL_MSG, NULL, 0);
+        msg = uwb_message_create(target_id, ID, UWB_RANGE_3WAY_FINAL_MSG, NULL, 0);
         msg.data_len = 12;
 
         var_to_8b_array(&msg.data[0], 4, poll_tx_ts);
@@ -429,7 +411,7 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     uint8_t rx_buffer[RX_BUF_LEN];
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
 
-    UWB_message msg = uwb_message_create(target_id, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
+    UWB_message msg = uwb_message_create(target_id, ID, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
     uint8_t rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
 
     if(rx_ret != UWB_SUCCESS)
@@ -443,7 +425,7 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
         uint32_t final_tx_time = (resp_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;   // Final message tx time
         uint64_t final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;  // Final TX timestamp = tx time we programmed plus the TX antenna delay. 
 
-        msg = uwb_message_create(target_id, UWB_RANGE_4WAY_FINAL_MSG, NULL, 0);
+        msg = uwb_message_create(target_id, ID, UWB_RANGE_4WAY_FINAL_MSG, NULL, 0);
         msg.data_len = 12;
 
         var_to_8b_array(&msg.data[0], 4, poll_tx_ts);
@@ -461,7 +443,6 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
             *range_dst_mm = (uint32_t)(rx_message.data[0] * 256 + rx_message.data[1]);
             return UWB_SUCCESS;
         }
-
     }
     return UWB_INVALID_RSP;
 }

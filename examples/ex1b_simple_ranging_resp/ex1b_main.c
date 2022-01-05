@@ -11,30 +11,30 @@
 #include "uwb_api.h"
 
 #define ANCHOR_ID 20
-extern SemaphoreHandle_t msgReadySemaphore;
-extern SemaphoreHandle_t msrmReadySemaphore;
-extern UWB_message uwb_rx_msg;
-
-extern UWB_measurement last_range_msrm;
-
 
 void print_rx_measurements(void* parameters);
 
-void appMain()
-{
+void appMain() {
     uwb_api_init(ANCHOR_ID);
-    uwb_set_state(RECEIVE);
+    uwb_responder_on();
     xTaskCreate(print_rx_measurements, "uwb-print", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
-
     while(1)
         vTaskDelay(10000);
 }
 
 
 void print_rx_measurements(void* parameters) {
+    UWB_measurement uwb_msrm = {0};
+    uint32_t msrm_ok_cnt = 0;
+    TickType_t t = xTaskGetTickCount();
     while(1) {
-        if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS)) {
-            DEBUG_PRINT("Distance: %.2f \n", last_range_msrm.range);
+        if (get_msrm_from_queue(&uwb_msrm, 200000) == UWB_SUCCESS) {
+            msrm_ok_cnt++;
+            if(xTaskGetTickCount() - t > 1000) {
+                DEBUG_PRINT("Successful in 1sec: %.1f \n", (float)msrm_ok_cnt * (float)pdMS_TO_TICKS(1000) / (float)(xTaskGetTickCount() - t));
+                t = xTaskGetTickCount();
+                msrm_ok_cnt = 0;
+            }
         }
     }
 }

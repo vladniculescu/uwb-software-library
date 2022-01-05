@@ -12,11 +12,7 @@
 #include "uwb_api.h"
 #include "config_params.h"
 
-extern SemaphoreHandle_t msgReadySemaphore;
-extern SemaphoreHandle_t msrmReadySemaphore;
-// extern UWB_message uwb_rx_msg;
 extern TaskHandle_t uwbTaskHandle;
-extern UWB_measurement last_range_msrm;
 
 SemaphoreHandle_t printSemaphore;
 
@@ -57,16 +53,19 @@ void registerAnchorDist(float x, float y, float z, float distance, float std_dev
 }
 
 void mission_drone_task(void* parameters) {
-    uwb_set_state(RECEIVE);
+    uwb_responder_on();
+    UWB_measurement last_measurement = {0};
     while(1) {
-        if (xSemaphoreTake(msrmReadySemaphore, 200000 / portTICK_PERIOD_MS)) {
+        uwb_err_code_e e = get_msrm_from_queue(&last_measurement, 200000);
+
+        if (e == UWB_SUCCESS) {
             xSemaphoreGive(printSemaphore);
-            packets[last_range_msrm.src_id]++;
+            packets[last_measurement.src_id]++;
             packets_total++;
-            dist_log[last_range_msrm.src_id] = last_range_msrm.range;
+            dist_log[last_measurement.src_id] = last_measurement.range;
             if (logGetFloat(logGetVarId("kalman", "stateZ")) > 0.55f)
-                if (last_range_msrm.range > 0.1f)
-                    registerAnchorDist(pos_x[last_range_msrm.src_id], pos_y[last_range_msrm.src_id], pos_z[last_range_msrm.src_id], last_range_msrm.range, 0.5f);
+                if (last_measurement.range > 0.1f)
+                    registerAnchorDist(pos_x[last_measurement.src_id], pos_y[last_measurement.src_id], pos_z[last_measurement.src_id], last_measurement.range, 0.5f);
         }   
     }
 }

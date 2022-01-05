@@ -45,3 +45,11 @@ void disable_uwb_int(void)
     NVIC_InitStructure.NVIC_IRQChannelCmd = DISABLE;
     NVIC_Init(&NVIC_InitStructure);
 }
+
+void reset_dw(void)
+{
+  GPIO_WriteBit(GPIO_PORT, GPIO_PIN_RESET, 0);
+  vTaskDelay(M2T(10));
+  GPIO_WriteBit(GPIO_PORT, GPIO_PIN_RESET, 1);
+  vTaskDelay(M2T(10));
+}

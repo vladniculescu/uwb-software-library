@@ -1,14 +1,13 @@
 #ifndef UWB_API_H
 #define UWB_API_H
 
+#include "FreeRTOS.h"
 #include "deca_regs.h"
-#include "dwm_utils.h"
 
 #define RX_BUF_LEN 24
 #define MSG_DATA_LEN (RX_BUF_LEN - 6)
 
-struct UWB_message
-{
+struct UWB_message {
     uint8_t ctrl;
     uint8_t src;
     uint8_t dest;
@@ -27,8 +26,7 @@ typedef struct {
   uwb_coordinate_t z;
 } uwb_node_coordinates_t;
 
-struct UWB_measurement
-{
+struct UWB_measurement {
     uint8_t src_id;
     float posx;
     float posy;
@@ -52,8 +50,7 @@ typedef enum message_type {
 /**
  * Possible return codes returned by the API functions
  */
-typedef enum UWB_err_code
-{
+typedef enum UWB_err_code {
   UWB_SUCCESS = 0, /**< Operation succeeded.*/
   UWB_RX_TIMEOUT = -1, /**< Receive time-out occurred.*/
   UWB_RX_ERROR = -2,
@@ -78,8 +75,10 @@ uwb_err_code_e uwb_send_frame_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8
 uwb_err_code_e uwb_send_frame(uint8_t* tx_msg, uint8_t msg_size, uint8_t ranging, uint32_t tx_delay);
 uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos);
 uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos, uint32_t* range_dst_mm);
-void uwb_check_for_errors(int8_t value);
-void uwb_set_state(uint8_t value);
 UWB_message decode_uwb_message(uint8_t* rx_buffer, uint8_t len);
+uwb_err_code_e get_msg_from_queue(UWB_message* msg, TickType_t timeout_ms);
+uwb_err_code_e get_msrm_from_queue(UWB_measurement* msrm, TickType_t timeout_ms);
+void uwb_responder_on(void);
+void uwb_responder_off(void);
 
 #endif 
