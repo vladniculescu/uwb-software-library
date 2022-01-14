@@ -239,16 +239,18 @@ void uwb_enable_rx(void) {
 }
 
 
-void uwb_responder_on(void) {
+uwb_err_code_e uwb_responder_on(void) {
     responder_on = 1;
     dwt_forcetrxoff();
     uwb_enable_rx();
+    return UWB_SUCCESS;
 }
 
 
-void uwb_responder_off(void) {
+uwb_err_code_e uwb_responder_off(void) {
     responder_on = 0;
     dwt_forcetrxoff();
+    return UWB_SUCCESS;
 }
 
 
@@ -343,7 +345,7 @@ uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expe
 }
 
 
-uwb_err_code_e uwb_send_frame_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len) {
+uwb_err_code_e uwb_send_msg_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len) {
     uwb_send_msg(msg, tx_delay, 1);
     if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
         dwt_forcetrxoff();
@@ -375,7 +377,7 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     uint8_t rx_ret, tx_ret;
 
     UWB_message msg = uwb_message_create(target_id, ID, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
-    rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
+    rx_ret = uwb_send_msg_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
 
     if(rx_ret != UWB_SUCCESS)
         return UWB_RX_ERROR;
@@ -412,7 +414,7 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
 
     UWB_message msg = uwb_message_create(target_id, ID, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
-    uint8_t rx_ret = uwb_send_frame_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
+    uint8_t rx_ret = uwb_send_msg_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
 
     if(rx_ret != UWB_SUCCESS)
         return rx_ret;
@@ -433,7 +435,7 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
         var_to_8b_array(&msg.data[8], 4, final_tx_ts);
 
         memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
-        rx_ret = uwb_send_frame_wait_rsp(msg, final_tx_time, rx_buffer, &rx_buffer_len);
+        rx_ret = uwb_send_msg_wait_rsp(msg, final_tx_time, rx_buffer, &rx_buffer_len);
         if(rx_ret != UWB_SUCCESS)
             return rx_ret;
 
