@@ -29,13 +29,13 @@ void appMain() {
 
     uwb_api_init(DRONE_ID);
     xTaskCreate(mission_drone_task, "mission", configMINIMAL_STACK_SIZE, NULL, 5, NULL);
-    xTaskCreate(print_task, "printer", configMINIMAL_STACK_SIZE, NULL, 0, NULL);
+    // xTaskCreate(print_task, "printer", configMINIMAL_STACK_SIZE, NULL, 0, NULL);
     vTaskDelay(1000);
     xTaskCreate(fly_task, "flier", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
 }
 
-float pos_x[] = {-2.4, 2.4, 2.4, -2.4, 0.0};
-float pos_y[] = {1.5, 0.9,  -1.5, -1.5, 0.0};
+float pos_x[] = {0.0,  2.0, 0.0, -2.0, 0.0};
+float pos_y[] = {2.0, 0.0, -2.0, 0.0, 0.0};
 float pos_z[] = {0.02, 0.02, 0.02, 0.02, 0.02};
 
 float dist_log[10];

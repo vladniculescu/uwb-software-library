@@ -42,16 +42,13 @@ void fly_task(void* parameters) {
         circle_center.y = 0.0f;
         circle_center.z = 0.8f;
 
-        // Define target point
-        point_t start_point = circle_center;
-        start_point.x = radius;
-
-        // Take off and fly to phase 0 on the circle
-        takeoff(start_point.z);
-        flyToPoint(start_point);
+        // Take off 
+        takeoff(circle_center.z);
 
         // Fly circle
-        flyCircle(circle_center, radius, 0.0f, 10000);
+        float phase = (float)(DRONE_ID - 20) * 120.0f;
+        flyCircle(circle_center, radius, phase, 10000);
+        flyCircle(circle_center, radius, phase, 10000);
         land();
         break;
     }
@@ -62,6 +59,20 @@ void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms){
     uint32_t steps = duration_ms / step_delay_ms;
     float loop_progress;
     phase = phase * (float)M_PI / 180.0f;
+
+    // Go to start
+    point_t start_point;
+    start_point.x = (float)cos(phase) * radius + center.x;
+    start_point.y = (float)sin(phase) * radius + center.y;
+    start_point.z = center.z;
+    // flyToPoint(start_point);
+
+    for (uint32_t i = 0; i < 40; i++) {
+        headToSetpoint(start_point.x, start_point.y, start_point.z, 0);
+        vTaskDelay(50);
+    }
+
+    // Loop circle
     for (uint32_t i = 0; i < steps; i++) {
         loop_progress = (float)i / (float)steps;
         float angle = loop_progress * 2 * (float)M_PI + phase;
@@ -105,28 +116,28 @@ void land(void) {
 }
 
 void flyToPoint(point_t targetPos){
-    float avg_vel = 0.5f;
-    uint32_t step_delay_ms = 40;
+    // float avg_vel = 0.5f;
+    // uint32_t step_delay_ms = 40;
 
-    point_t startPos;
-    memset(&startPos, 0, sizeof(startPos));
-    estimatorKalmanGetEstimatedPos(&startPos);
+    // point_t startPos;
+    // memset(&startPos, 0, sizeof(startPos));
+    // estimatorKalmanGetEstimatedPos(&startPos);
 
-    float distX = targetPos.x - startPos.x;
-    float distY = targetPos.y - startPos.y;
-    float distance = sqrtf(powf(distX, 2) + powf(distY, 2));
+    // float distX = targetPos.x - startPos.x;
+    // float distY = targetPos.y - startPos.y;
+    // float distance = sqrtf(powf(distX, 2) + powf(distY, 2));
 
-    float avg_time = 1000.0f * distance / avg_vel;
+    // float avg_time = 1000.0f * distance / avg_vel;
 
-    uint32_t steps = (uint32_t)(avg_time / (float) step_delay_ms);
-    for (uint32_t i = 0; i < steps; i++) {
-        headToSetpoint(startPos.x + i * distX / steps, startPos.y + i * distY / steps, targetPos.z, 0);
-        vTaskDelay(step_delay_ms);
-    }
-    for (uint32_t i = 0; i < 20; i++) {
-        headToSetpoint(targetPos.x, targetPos.y, targetPos.z, 0);
-        vTaskDelay(step_delay_ms);
-    }
+    // uint32_t steps = (uint32_t)(avg_time / (float) step_delay_ms);
+    // for (uint32_t i = 0; i < steps; i++) {
+    //     headToSetpoint(startPos.x + i * distX / steps, startPos.y + i * distY / steps, targetPos.z, 0);
+    //     vTaskDelay(step_delay_ms);
+    // }
+    // for (uint32_t i = 0; i < 20; i++) {
+    //     headToSetpoint(targetPos.x, targetPos.y, targetPos.z, 0);
+    //     vTaskDelay(step_delay_ms);
+    // }
 }
 
 void headToSetpoint(float x, float y, float z, float yaw)

@@ -49,7 +49,7 @@ static uint8_t ID = 0;
 ///////////////////////////////////////////////////////  COMMON  ///////////////////////////////////////////////////////
 uwb_err_code_e uwb_init() {
     reset_dw();  // reset UWB module
-    if(dwt_initialise(DWT_LOADUCODE) == DWT_ERROR) { // init UWB module
+    if (dwt_initialise(DWT_LOADUCODE) == DWT_ERROR) { // init UWB module
         DEBUG_PRINT("UWB init failed\n");
         vTaskDelay(10);
         return UWB_ERROR;
@@ -85,7 +85,7 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
 
     spiBegin();
     set_spi_speed(0);
-    if(uwb_init() != UWB_SUCCESS)
+    if (uwb_init() != UWB_SUCCESS)
         return UWB_ERROR;
     set_spi_speed(1);
 
@@ -110,7 +110,7 @@ void __attribute__((used)) EXTI11_Callback(void) {
     NVIC_ClearPendingIRQ(EXTI_IRQChannel);
     EXTI_ClearITPendingBit(EXTI_LineN);
 
-    if(responder_on == 1) {
+    if (responder_on == 1) {
         vTaskNotifyGiveFromISR(uwbTaskHandle_rx, &xHigherPriorityTaskWoken); 
     }
     else {
@@ -132,26 +132,32 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG);  // Clear good RX frame event
     memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));  // Clear local RX buffer 
     
-    if(cb_data->datalength <= RX_BUF_LEN)  
-        dwt_readrxdata(rx_buffer, cb_data->datalength, 0);  // Read received frame into the local buffer
-
-    uwb_rx_msg = uwb_message_from_array(rx_buffer, cb_data->datalength); // TODO check
-
-    if(uwb_rx_msg.ctrl != 0xDE) {
+    if (cb_data->datalength > RX_BUF_LEN)  
+    {
+        // goto done; // TODO implement goto
         uwb_enable_rx();
         return;
     }
 
-    if((uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) || (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG))) {
+    dwt_readrxdata(rx_buffer, cb_data->datalength, 0);  // Read received frame into the local buffer
+    uwb_rx_msg = uwb_message_from_array(rx_buffer, cb_data->datalength); // TODO return if bad length
+
+    if (uwb_rx_msg.ctrl != 0xDE) {
+        uwb_enable_rx();  // TODO implement goto
+        return;
+    }
+
+    if ((uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) || (uwb_rx_msg.code == UWB_RANGE_INIT_NO_COORDS_MSG))) {
         poll_rx_ts = get_rx_timestamp_u64();  // Get poll reception timestamp.
 
-        if(uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) {
+        if (uwb_rx_msg.code == UWB_RANGE_INIT_WITH_COORDS_MSG) {
             uwb_msrm.posx = (float)*(int16_t*)&uwb_rx_msg.data[0];
             uwb_msrm.posy = (float)*(int16_t*)&uwb_rx_msg.data[2];
+            // uwb_msrm.posy = (float)(int16_t)(uwb_rx_msg.data[2] | (uwb_rx_msg.data[3] << 8));
             uwb_msrm.posz = (float)*(int16_t*)&uwb_rx_msg.data[4];
         }
         else
-            memset(&uwb_msrm, 0, sizeof(UWB_measurement));
+            memset(&uwb_msrm, 0, sizeof(UWB_measurement)); // TODO - manually assign to 0
 
         uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;  // Calculate send delay time.
         dwt_setdelayedtrxtime(resp_tx_time);  // Schedule delayed transmission.
@@ -162,7 +168,7 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
         uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 1);
 
     }
-    else if((uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_3WAY_FINAL_MSG) || (uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG))) {
+    else if ((uwb_rx_msg.dest == ID) && ((uwb_rx_msg.code == UWB_RANGE_3WAY_FINAL_MSG) || (uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG))) {
         dwt_setleds(DWT_LEDS_ENABLE);  // Enable LEDs for visual feedback.
 
         uint64_t resp_tx_ts = get_tx_timestamp_u64();  // Retrieve response transmission timestamp.
@@ -190,7 +196,7 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
         uwb_msrm.src_id = uwb_rx_msg.src;
         uint32_t distance_int = (uint32_t)(dist * 1000);  // Calculate distance in mm.
 
-        if(uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG) {  // If the Initiator requests the range value back.
+        if (uwb_rx_msg.code == UWB_RANGE_4WAY_FINAL_MSG) {  // If the Initiator requests the range value back.
             uint8_t range_two_bytes[] = {(distance_int >> 8) & 0xFF,  distance_int & 0xFF};
 
             poll_rx_ts = get_rx_timestamp_u64();
@@ -204,7 +210,7 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
     else 
         send_msg_to_queue(uwb_rx_msg);
 
-    uwb_enable_rx();    
+    uwb_enable_rx();
 }
 
 
@@ -226,7 +232,7 @@ void rx_err_to_cb(const dwt_cb_data_t *cb_data) {
 
 void uwb_isr_task(void* parameters) {
     while(1) {
-        if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200000)) > 0) {
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200000)) > 0) {
             dwt_isr();
         }
     }
@@ -255,8 +261,8 @@ uwb_err_code_e uwb_responder_off(void) {
 
 
 uwb_err_code_e get_msrm_from_queue(UWB_measurement* msrm, TickType_t timeout_ms) {
-    if( msrmRcvQueue != NULL ) {
-        if(xQueueReceive(msrmRcvQueue, msrm, (TickType_t) timeout_ms) == pdTRUE) {
+    if ( msrmRcvQueue != NULL ) {
+        if (xQueueReceive(msrmRcvQueue, msrm, (TickType_t) timeout_ms) == pdTRUE) {
             return UWB_SUCCESS;
         }
         else return UWB_RX_TIMEOUT;
@@ -266,13 +272,13 @@ uwb_err_code_e get_msrm_from_queue(UWB_measurement* msrm, TickType_t timeout_ms)
 
 
 uwb_err_code_e send_msrm_to_queue(UWB_measurement msrm) {
-    UBaseType_t nr_of_elements;
-    if( msrmRcvQueue != NULL ) {
+    UBaseType_t nr_of_elements; // TODO put a decent name
+    if ( msrmRcvQueue != NULL ) {
         nr_of_elements = uxQueueSpacesAvailable(msrmRcvQueue);
-        if(nr_of_elements == 0)
+        if (nr_of_elements == 0)
             xQueueReset(msrmRcvQueue);
         
-        if(xQueueSendToBack(msrmRcvQueue, (void*)&msrm, (TickType_t) 0) == pdTRUE) {
+        if (xQueueSendToBack(msrmRcvQueue, (void*)&msrm, (TickType_t) 0) == pdTRUE) {
             return UWB_SUCCESS;
         }
     }
@@ -281,8 +287,8 @@ uwb_err_code_e send_msrm_to_queue(UWB_measurement msrm) {
 
 
 uwb_err_code_e get_msg_from_queue(UWB_message* msg, TickType_t timeout_ms) {
-    if( msgRcvQueue != NULL ) {
-        if(xQueueReceive(msgRcvQueue, msg, (TickType_t) timeout_ms) == pdTRUE) {
+    if ( msgRcvQueue != NULL ) {
+        if (xQueueReceive(msgRcvQueue, msg, (TickType_t) timeout_ms) == pdTRUE) {
             return UWB_SUCCESS;
         }
         return UWB_RX_TIMEOUT;
@@ -293,12 +299,12 @@ uwb_err_code_e get_msg_from_queue(UWB_message* msg, TickType_t timeout_ms) {
 
 uwb_err_code_e send_msg_to_queue(UWB_message msg) {
     UBaseType_t nr_of_elements;
-    if( msgRcvQueue != NULL ) {
+    if ( msgRcvQueue != NULL ) {
         nr_of_elements = uxQueueSpacesAvailable(msgRcvQueue);
-        if(nr_of_elements == 0)
+        if (nr_of_elements == 0)
             xQueueReset(msgRcvQueue);
         
-        if(xQueueSendToBack(msgRcvQueue, (void*)&msg, (TickType_t) 0) == pdTRUE) {
+        if (xQueueSendToBack(msgRcvQueue, (void*)&msg, (TickType_t) 0) == pdTRUE) {
             return UWB_SUCCESS;
         }
     }
@@ -323,18 +329,18 @@ uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expe
     dwt_setrxtimeout(RX_TIMEOUT_UUS);
 
     uint8_t tx_config_mask = DWT_START_TX_IMMEDIATE + (tx_delay > 0) * DWT_START_TX_DELAYED + rsp_expected * DWT_RESPONSE_EXPECTED;
-    if(tx_delay > 0) 
+    if (tx_delay > 0) 
         dwt_setdelayedtrxtime(tx_delay);
     int32_t ret = dwt_starttx(tx_config_mask);
 
-    if(ret < UWB_SUCCESS)
+    if (ret < UWB_SUCCESS)
         return UWB_TX_ERROR;
 
     dwt_setinterrupt(DWT_INT_TFRS, 2);
 
-    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) == pdFALSE) {
+    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2)) == pdFALSE) {
         uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID); 
-        if((status_reg & SYS_STATUS_TXFRS) == 0)
+        if ((status_reg & SYS_STATUS_TXFRS) == 0)
             dwt_forcetrxoff();
         dwt_setinterrupt(RX_INTERRUPT_MASK, 2); 
         return UWB_TX_ERROR;
@@ -347,14 +353,14 @@ uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expe
 
 uwb_err_code_e uwb_send_msg_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len) {
     uwb_send_msg(msg, tx_delay, 1);
-    if(ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
+    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
         dwt_forcetrxoff();
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame
         return UWB_RX_TIMEOUT;
     }
     uint32_t status_reg = dwt_read32bitreg(SYS_STATUS_ID);  // Read status register to check if the receive is valid
 
-    if(status_reg & SYS_STATUS_RXFCG) {
+    if (status_reg & SYS_STATUS_RXFCG) {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame
         uint8_t frame_len = dwt_read32bitreg(RX_FINFO_ID) & RX_FINFO_RXFLEN_MASK;
         if (frame_len <= RX_BUF_LEN)
@@ -379,11 +385,11 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     UWB_message msg = uwb_message_create(target_id, ID, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
     rx_ret = uwb_send_msg_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
 
-    if(rx_ret != UWB_SUCCESS)
+    if (rx_ret != UWB_SUCCESS)
         return UWB_RX_ERROR;
 
     UWB_message rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len); // TODO
-    if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
+    if ((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
         uint64_t poll_tx_ts = get_tx_timestamp_u64();  // Poll transmission timestamp
         uint64_t resp_rx_ts = get_rx_timestamp_u64();  // Response transmission timestamp
 
@@ -400,7 +406,7 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
 
         tx_ret =  uwb_send_msg(msg, final_tx_time, 0);
 
-        if(tx_ret != UWB_SUCCESS)
+        if (tx_ret != UWB_SUCCESS)
             return UWB_RX_ERROR;
         else
             return UWB_SUCCESS;    
@@ -408,6 +414,7 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     return UWB_INVALID_RSP;
 }
 
+// TODO inlcude the 3way in 4way function
 uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordinates_t node_pos, uint32_t* range_dst_mm) {
     uint8_t rx_buffer_len;
     uint8_t rx_buffer[RX_BUF_LEN];
@@ -416,11 +423,11 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
     UWB_message msg = uwb_message_create(target_id, ID, UWB_RANGE_INIT_WITH_COORDS_MSG, (uint8_t*)(&node_pos), sizeof(uwb_node_coordinates_t));
     uint8_t rx_ret = uwb_send_msg_wait_rsp(msg, 0, rx_buffer, &rx_buffer_len);
 
-    if(rx_ret != UWB_SUCCESS)
+    if (rx_ret != UWB_SUCCESS)
         return rx_ret;
 
     UWB_message rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len);
-    if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
+    if ((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_RSP_MSG)) {
         uint64_t poll_tx_ts = get_tx_timestamp_u64();  // Poll transmission timestamp
         uint64_t resp_rx_ts = get_rx_timestamp_u64();  // Response transmission timestamp
 
@@ -436,12 +443,12 @@ uwb_err_code_e uwb_do_4way_ranging_with_node(uint8_t target_id, uwb_node_coordin
 
         memset(rx_buffer, 0, RX_BUF_LEN*sizeof(uint8_t));
         rx_ret = uwb_send_msg_wait_rsp(msg, final_tx_time, rx_buffer, &rx_buffer_len);
-        if(rx_ret != UWB_SUCCESS)
+        if (rx_ret != UWB_SUCCESS) // move to the rcv msg function
             return rx_ret;
 
         rx_message = uwb_message_from_array(rx_buffer, rx_buffer_len);
 
-        if((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_4WAY_RESULT_MSG)) {
+        if ((rx_message.ctrl == 0xDE) && (rx_message.dest == ID) && (rx_message.code == UWB_RANGE_4WAY_RESULT_MSG)) {
             *range_dst_mm = (uint32_t)(rx_message.data[0] * 256 + rx_message.data[1]);
             return UWB_SUCCESS;
         }

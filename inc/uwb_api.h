@@ -10,15 +10,14 @@
 /**
  * The fields of a message sent/received over UWB within this API
  */
-struct UWB_message {
+typedef struct UWB_message {
     uint8_t ctrl;               /**< the ctrl (control) field is a constant magic number - always 0xDE.*/
     uint8_t src;                /**< the ID of the source node which sent the mesage.*/
     uint8_t dest;               /**< the ID of the target node which should receive the mesage.*/
     uint8_t code;               /**< the message type.*/
     uint8_t data[MSG_DATA_LEN]; /**< the message data field.*/
     uint8_t data_len;           /**< the length of the message data field.*/
-};
-typedef struct UWB_message UWB_message;
+} UWB_message;
 
 /**
  * Structure containing the node's coordinates
