@@ -28,15 +28,15 @@ void appMain() {
     xSemaphoreGive(printSemaphore);
 
     uwb_api_init(DRONE_ID);
-    xTaskCreate(mission_drone_task, "mission", configMINIMAL_STACK_SIZE, NULL, 5, NULL);
+    xTaskCreate(mission_drone_task, "mission", 2*configMINIMAL_STACK_SIZE, NULL, 5, NULL);
     // xTaskCreate(print_task, "printer", configMINIMAL_STACK_SIZE, NULL, 0, NULL);
     vTaskDelay(1000);
-    xTaskCreate(fly_task, "flier", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+    xTaskCreate(fly_task, "flier", 3*configMINIMAL_STACK_SIZE, NULL, 2, NULL);
 }
 
-float pos_x[] = {0.0,  2.0, 0.0, -2.0, 0.0};
-float pos_y[] = {2.0, 0.0, -2.0, 0.0, 0.0};
-float pos_z[] = {0.02, 0.02, 0.02, 0.02, 0.02};
+float pos_x[] = {-2.5,  2.5, 2.5, -2.5};
+float pos_y[] = {2.5, 2.5, -2.5, -2.5};
+float pos_z[] = {0.02, 0.02, 0.02, 0.02};
 
 float dist_log[10];
 
@@ -55,6 +55,18 @@ void registerAnchorDist(float x, float y, float z, float distance, float std_dev
 void mission_drone_task(void* parameters) {
     uwb_responder_on();
     UWB_measurement last_measurement = {0};
+
+    UWB_message broadcast_msg = {0};
+    while(1) {
+        if (get_msg_from_queue(&broadcast_msg, 200000) == UWB_SUCCESS) {
+            if(broadcast_msg.ctrl == 0xDE && broadcast_msg.data_len > 0) 
+                if (broadcast_msg.data[0] == 'S') {
+                    start = 1;
+                    break;
+                }
+        }
+    }
+
     while(1) {
         uwb_err_code_e e = get_msrm_from_queue(&last_measurement, 200000);
 
@@ -63,9 +75,9 @@ void mission_drone_task(void* parameters) {
             packets[last_measurement.src_id]++;
             packets_total++;
             dist_log[last_measurement.src_id] = last_measurement.range;
-            if (logGetFloat(logGetVarId("kalman", "stateZ")) > 0.55f)
+            if (logGetFloat(logGetVarId("kalman", "stateZ")) > 0.3f)
                 if (last_measurement.range > 0.1f)
-                    registerAnchorDist(pos_x[last_measurement.src_id], pos_y[last_measurement.src_id], pos_z[last_measurement.src_id], last_measurement.range, 0.5f);
+                    registerAnchorDist(pos_x[last_measurement.src_id], pos_y[last_measurement.src_id], pos_z[last_measurement.src_id], last_measurement.range, 0.23f);
         }   
     }
 }

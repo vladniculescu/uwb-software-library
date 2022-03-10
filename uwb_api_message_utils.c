@@ -9,7 +9,7 @@ UWB_message uwb_message_from_array(uint8_t* rx_buffer, uint8_t len) {
     message.dest = rx_buffer[2];
     message.code = rx_buffer[3];
     message.data_len = len - 4 - 2;
-    if((message.data_len > 0) && (message.data_len < RX_BUF_LEN - 4 - 2))
+    if((message.data_len > 0) && (message.data_len <= MSG_DATA_LEN))
         memcpy(message.data, &rx_buffer[4], message.data_len);
 
     return message;
@@ -38,8 +38,7 @@ UWB_message uwb_message_create(uint8_t dest, uint8_t src, uint8_t code, uint8_t*
 }
 
 
-uint64_t get_tx_timestamp_u64(void)
-{
+uint64_t get_tx_timestamp_u64(void) {
     uint8_t ts_tab[5];
     uint64_t ts = 0;
     int i;
@@ -52,8 +51,7 @@ uint64_t get_tx_timestamp_u64(void)
     return ts;
 }
 
-uint64_t get_rx_timestamp_u64(void)
-{
+uint64_t get_rx_timestamp_u64(void) {
     uint8_t ts_tab[5];
     uint64_t ts = 0;
     int i;
@@ -66,8 +64,7 @@ uint64_t get_rx_timestamp_u64(void)
     return ts;
 }
 
-uint64_t var_from_8b_array(uint8_t *array, uint8_t size)
-{
+uint64_t var_from_8b_array(uint8_t *array, uint8_t size) {
     uint64_t var = 0;
     for (uint8_t i = 0; i < size; i++)
         var += array[i] << (i * 8);
@@ -75,8 +72,7 @@ uint64_t var_from_8b_array(uint8_t *array, uint8_t size)
     return var;
 }
 
-void var_to_8b_array(uint8_t *array, uint8_t size, uint64_t var)
-{
+void var_to_8b_array(uint8_t *array, uint8_t size, uint64_t var) {
     // low index - LSB
     for (uint8_t i = 0; i < size; i++)
         array[i] = (uint8_t) ((var >> (8*i)) & 0xFF);

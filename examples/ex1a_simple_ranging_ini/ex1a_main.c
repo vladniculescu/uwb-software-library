@@ -34,13 +34,14 @@ void appMain() {
 
 uint32_t msrm_ok_cnt = 0;
 void uwb_initiator(void *parameters) {
-    const TickType_t xPeriod = 4;
+    const TickType_t xPeriod = 3;
     TickType_t xLastWakeTime = xTaskGetTickCount();
     uwb_node_coordinates_t node_pos;
     uint32_t range;
     while(1) {
         vTaskDelayUntil(&xLastWakeTime, xPeriod);
-        uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, node_pos, &range);
+        // uwb_err_code_e e = uwb_do_4way_ranging_with_node(20, node_pos, &range);
+        uwb_err_code_e e = uwb_do_3way_ranging_with_node(20, node_pos);
 
         if(e == UWB_SUCCESS) 
             msrm_ok_cnt++;

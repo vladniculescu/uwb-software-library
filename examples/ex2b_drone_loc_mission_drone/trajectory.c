@@ -19,7 +19,8 @@ void land(void);
 void flyToPoint(point_t endPos);
 void headToSetpoint(float x, float y, float z, float yaw);
 void positionSet(setpoint_t *setpoint, float x, float y, float z, float yaw);
-void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms);
+// void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms);
+void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms, uint8_t repetitions, bool clockwise);
 
 uint8_t start = 0;
 
@@ -29,7 +30,7 @@ void fly_task(void* parameters) {
     while(1) {
 
         while(!start)
-            vTaskDelay(1000);
+            vTaskDelay(5);
 
         // Reset estimator
         estimatorKalmanInit();
@@ -38,6 +39,7 @@ void fly_task(void* parameters) {
         point_t circle_center;
         memset(&circle_center, 0, sizeof(circle_center));
         float radius = 1.0f;
+        float phase;
         circle_center.x = 0.0f;
         circle_center.y = 0.0f;
         circle_center.z = 0.8f;
@@ -46,16 +48,23 @@ void fly_task(void* parameters) {
         takeoff(circle_center.z);
 
         // Fly circle
-        float phase = (float)(DRONE_ID - 20) * 120.0f;
-        flyCircle(circle_center, radius, phase, 10000);
-        flyCircle(circle_center, radius, phase, 10000);
+        if (DRONE_ID <= 25) {
+            phase = (float)(DRONE_ID - 20) * 60.0f;
+            radius = 1.5f;
+            flyCircle(circle_center, radius, phase, 10000, 3, true);
+        } else {
+            phase = (float)(DRONE_ID - 25) * 25.7f;
+            radius = 2.5f;
+            flyCircle(circle_center, radius, phase, 15000, 2, false);
+        }
         land();
         break;
     }
 }
 
-void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms){
-    uint32_t step_delay_ms = 40;
+
+void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms, uint8_t repetitions, bool clockwise){
+    uint8_t step_delay_ms = 40;
     uint32_t steps = duration_ms / step_delay_ms;
     float loop_progress;
     phase = phase * (float)M_PI / 180.0f;
@@ -66,23 +75,80 @@ void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms){
     start_point.y = (float)sin(phase) * radius + center.y;
     start_point.z = center.z;
     // flyToPoint(start_point);
+    //
+    // DEBUG_PRINT("start set\n");
+
+    for (uint8_t i = 0; i < 40; i++) {
+        headToSetpoint(start_point.x, start_point.y, start_point.z, 0);
+        vTaskDelay(50);
+    }
+    // DEBUG_PRINT("start reached\n");
+
+    // Loop circle
+    for (uint8_t j = 0; j < repetitions; j++){
+        for (uint32_t i = 0; i <= steps; i++) {
+            loop_progress = (float)i / (float)steps;
+            float angle = 0.0f;
+            if (clockwise) {
+                angle = loop_progress * 2 * (float)M_PI + phase;
+            } else {
+                angle = - loop_progress * 2 * (float)M_PI + phase;
+            }
+            float x = (float)cos(angle) * radius + center.x;
+            float y = (float)sin(angle) * radius + center.y;
+            float z = center.z;
+
+            // if (DRONE_ID <= 25) {
+            //     uint8_t mult = 6;
+            //     z += (float)sin(angle*mult) * 0.2;
+            // }
+            // if (DRONE_ID > 25){
+            //     uint8_t mult = 14;
+            //     z += (float)sin(angle*mult) * 0.2;
+            // }
+            headToSetpoint(x, y, z, 0);
+            DEBUG_PRINT("%.2f, %.2f, %.2f \n", x, y, z);
+            vTaskDelay(step_delay_ms);
+        }
+    }
 
     for (uint32_t i = 0; i < 40; i++) {
         headToSetpoint(start_point.x, start_point.y, start_point.z, 0);
         vTaskDelay(50);
     }
 
-    // Loop circle
-    for (uint32_t i = 0; i < steps; i++) {
-        loop_progress = (float)i / (float)steps;
-        float angle = loop_progress * 2 * (float)M_PI + phase;
-        float x = (float)cos(angle) * radius + center.x;
-        float y = (float)sin(angle) * radius + center.y;
-        headToSetpoint(x, y, center.z, 0);
-        DEBUG_PRINT("%.2f, %.2f \n", x, y);
-        vTaskDelay(step_delay_ms);
-    }
 }
+
+
+// void flyCircle(point_t center, float radius, float phase, uint32_t duration_ms){
+//     uint32_t step_delay_ms = 40;
+//     uint32_t steps = duration_ms / step_delay_ms;
+//     float loop_progress;
+//     phase = phase * (float)M_PI / 180.0f;
+
+//     // Go to start
+//     point_t start_point;
+//     start_point.x = (float)cos(phase) * radius + center.x;
+//     start_point.y = (float)sin(phase) * radius + center.y;
+//     start_point.z = center.z;
+//     // flyToPoint(start_point);
+
+//     for (uint32_t i = 0; i < 40; i++) {
+//         headToSetpoint(start_point.x, start_point.y, start_point.z, 0);
+//         vTaskDelay(50);
+//     }
+
+//     // Loop circle
+//     for (uint32_t i = 0; i < steps; i++) {
+//         loop_progress = (float)i / (float)steps;
+//         float angle = loop_progress * 2 * (float)M_PI + phase;
+//         float x = (float)cos(angle) * radius + center.x;
+//         float y = (float)sin(angle) * radius + center.y;
+//         headToSetpoint(x, y, center.z, 0);
+//         DEBUG_PRINT("%.2f, %.2f \n", x, y);
+//         vTaskDelay(step_delay_ms);
+//     }
+// }
 
 
 void takeoff(float height) {
@@ -93,6 +159,7 @@ void takeoff(float height) {
     uint32_t endheight = (uint32_t)(100 * (height - 0.3f));
     for(uint32_t i=0; i<endheight; i++) {
         headToSetpoint(pos.x, pos.y, 0.3f + (float)i / 100.0f, 0);
+        estimatorKalmanGetEstimatedPos(&pos);
         vTaskDelay(30);
     }
 }

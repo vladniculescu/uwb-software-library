@@ -9,12 +9,15 @@
 #include "uwb_api.h"
 #include "stm32f4xx_tim.h"
 #include "config_params.h"
+#include "param.h"
 
 #define DEBUG_MODULE "AD"
 
 extern TaskHandle_t uwbTaskHandle;
 
 SemaphoreHandle_t printSemaphore;
+
+uint8_t start_all = 0;
 
 int32_t packets = 0;
 
@@ -46,6 +49,22 @@ void anchor_task(void* parameters) {
 
     while(1) {
         if(ANCHOR_ID == 0) {
+
+            if (start_all) {
+                UWB_message broadcast_msg = {0};
+                broadcast_msg.ctrl = 0xDE;
+                broadcast_msg.src = 0;
+                broadcast_msg.code = 100;
+                broadcast_msg.data[0] = 'S';
+                broadcast_msg.data_len = 1;
+
+                for (uint8_t k=0; k<3; k++) {
+                    uwb_send_msg(broadcast_msg, 0, 0);
+                    vTaskDelay(10);
+                }
+                start_all = 0;
+            }
+
             vTaskDelayUntil(&xLastWakeTime, NR_OF_ANCHORS*RANGING_TIME);
             e = uwb_do_3way_ranging_with_node(md_counter, anchor_pos);
             if(md_counter == (MD_FIRST_ID + NR_OF_MD - 1))
@@ -86,3 +105,8 @@ void print_task(void* parameters) {
         }
     }
 }
+
+
+PARAM_GROUP_START(UWB_COMMANDS)
+PARAM_ADD(PARAM_UINT8, start_all, &start_all)
+PARAM_GROUP_STOP(UWB_COMMANDS)
