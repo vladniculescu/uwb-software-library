@@ -18,7 +18,7 @@
 #include "estimator.h"
 #include "platform.h"
 
-#include "deca_device_api.h"
+#include "decawave_api/deca_device_api.h"
 
 #include "uwb_timing.h"
 #include "dwm_config.h"

@@ -8,7 +8,7 @@ UWB_API_BASE=../..
 VPATH += $(UWB_API_BASE)/
 VPATH += $(UWB_API_BASE)/decawave_api/
 INCLUDES += -I$(UWB_API_BASE)/decawave_api -I$(UWB_API_BASE) -I$(UWB_API_BASE)/inc
-PROJ_OBJ += deca_device.o deca_params_init.o
+PROJ_OBJ += deca_device.o deca_params_init.o 
 
 # UWB API
 PROJ_OBJ += uwb_api.o

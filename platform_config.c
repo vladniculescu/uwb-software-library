@@ -2,6 +2,8 @@
 #include "FreeRTOS.h"
 #include "platform_config.h"
 #include "debug.h"
+#include "task.h"
+
 
 static EXTI_InitTypeDef EXTI_InitStructure;
 static GPIO_InitTypeDef GPIO_InitStructure;
