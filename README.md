@@ -31,3 +31,5 @@ To flash the exmples:
 `cd examples/ex1a_simple_ranging_ini`
 `make all`
 `make cload` -- with the drone in bootloader mode
+
+Note: for a more detailed description of the API functions, check `inc/uwb_api.h`
