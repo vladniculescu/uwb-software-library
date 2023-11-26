@@ -1,0 +1,1 @@
+cmd_src/deck/api/built-in.o :=  arm-none-eabi-gcc --specs=nosys.specs --specs=nano.specs -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16  -r -o src/deck/api/built-in.o src/deck/api/deck_analog.o src/deck/api/deck_constants.o src/deck/api/deck_digital.o src/deck/api/deck_spi3.o src/deck/api/deck_spi.o

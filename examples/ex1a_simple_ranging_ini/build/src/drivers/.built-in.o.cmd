@@ -1,0 +1,1 @@
+cmd_src/drivers/built-in.o :=  arm-none-eabi-gcc --specs=nosys.specs --specs=nano.specs -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16  -r -o src/drivers/built-in.o src/drivers/src/built-in.o src/drivers/bosch/src/built-in.o src/drivers/esp32/src/built-in.o

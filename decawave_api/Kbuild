@@ -1,0 +1,2 @@
+obj-y += deca_device.o
+obj-y += deca_params_init.o

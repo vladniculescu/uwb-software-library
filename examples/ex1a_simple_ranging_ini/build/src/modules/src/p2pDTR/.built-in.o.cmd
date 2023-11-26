@@ -1,0 +1,1 @@
+cmd_src/modules/src/p2pDTR/built-in.o :=  arm-none-eabi-gcc --specs=nosys.specs --specs=nano.specs -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16  -r -o src/modules/src/p2pDTR/built-in.o src/modules/src/p2pDTR/DTR_handlers.o src/modules/src/p2pDTR/DTR_p2p_interface.o src/modules/src/p2pDTR/queueing.o src/modules/src/p2pDTR/token_ring.o

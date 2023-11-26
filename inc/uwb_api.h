@@ -51,7 +51,9 @@ typedef enum message_type {
     UWB_RANGE_3WAY_FINAL_MSG,       /**< UWB ranging Final message - Initiator sends this 3rd UWB message, telling the Responder to not send back the range value.*/
     UWB_RANGE_4WAY_FINAL_MSG,       /**< UWB ranging Final message - Initiator sends this 3rd UWB message, telling the Responder to send back the range value.*/
     UWB_RANGE_4WAY_RESULT_MSG,      /**< UWB ranging Optional message - after the Responder calcualtes the range, it sends it back to the Initiator.*/
-    UWB_USER_MSG                    /**< UWB general purpose message.*/
+    UWB_USER_MSG,                   /**< UWB general purpose message.*/
+    UWB_ACK_MSG,                    /**< UWB message requiring acknowledge.*/
+    UWB_ACK_RES_MSG                 /**< UWB acknowledge message.*/
 } uwb_message_type_t;
 
 /**

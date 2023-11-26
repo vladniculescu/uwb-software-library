@@ -11,7 +11,7 @@ static NVIC_InitTypeDef NVIC_InitStructure;
 
 void init_io(void)
 {
-    initUsecTimer();
+    // initUsecTimer();
     SYSCFG_EXTILineConfig(EXTI_PortSource, EXTI_PinSource);
 
     EXTI_InitStructure.EXTI_Line = EXTI_LineN;

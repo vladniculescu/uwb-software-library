@@ -1,0 +1,2 @@
+obj-y += ex1a_main.o
+obj-y += ./../..

@@ -1,0 +1,1 @@
+cmd_src/platform/src/built-in.o :=  arm-none-eabi-gcc --specs=nosys.specs --specs=nano.specs -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16  -r -o src/platform/src/built-in.o src/platform/src/platform_cf2.o src/platform/src/platform.o src/platform/src/platform_stm32f4.o src/platform/src/platform_utils.o

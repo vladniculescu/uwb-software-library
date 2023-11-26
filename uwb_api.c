@@ -206,6 +206,14 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
         }
         send_msrm_to_queue(uwb_msrm);
     }
+    else if ((uwb_rx_msg.dest == ID) && (uwb_rx_msg.code == UWB_ACK_MSG)) {
+        poll_rx_ts = get_rx_timestamp_u64();
+        uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+
+        uwb_tx_msg = uwb_message_create(uwb_rx_msg.src, ID, UWB_ACK_RES_MSG, &uwb_rx_msg.data[0], uwb_rx_msg.data_len);
+        uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 0);
+        send_msg_to_queue(uwb_rx_msg);
+    }
     else 
         send_msg_to_queue(uwb_rx_msg);
 
@@ -409,7 +417,7 @@ uwb_err_code_e uwb_do_3way_ranging_with_node(uint8_t target_id, uwb_node_coordin
         tx_ret =  uwb_send_msg(msg, final_tx_time, 0);
 
         if (tx_ret != UWB_SUCCESS)
-            return UWB_RX_ERROR;
+            return UWB_TX_ERROR;
         else
             return UWB_SUCCESS;    
     }

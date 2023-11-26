@@ -1,21 +1,11 @@
-# enable app support
-APP=1
-APP_STACKSIZE=3000
-CRAZYFLIE_BASE=../../../crazyflie-firmware
-UWB_API_BASE=../..
+CRAZYFLIE_BASE := ../../../crazyflie-firmware
 
-# Decawave API
-VPATH += $(UWB_API_BASE)/
-VPATH += $(UWB_API_BASE)/decawave_api/
-INCLUDES += -I$(UWB_API_BASE)/decawave_api -I$(UWB_API_BASE) -I$(UWB_API_BASE)/inc
-PROJ_OBJ += deca_device.o deca_params_init.o 
+EXTRA_CFLAGS += -I$(PWD)/../../inc
+EXTRA_CFLAGS += -I$(PWD)/../../decawave_api
+EXTRA_CFLAGS += -Wno-error
 
-# UWB API
-PROJ_OBJ += uwb_api.o
-PROJ_OBJ += uwb_api_message_utils.o
-PROJ_OBJ += platform_config.o
 
-# Example file
-PROJ_OBJ += ex1a_main.o
+OOT_CONFIG := $(PWD)/app-config
 
-include $(CRAZYFLIE_BASE)/Makefile
+include $(CRAZYFLIE_BASE)/tools/make/oot.mk
+
