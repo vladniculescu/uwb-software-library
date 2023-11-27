@@ -4,7 +4,7 @@
 #include "FreeRTOS.h"
 #include "deca_regs.h"
 
-#define RX_BUF_LEN 24  /**< Maximum length of a UWB message. Excahnging larger messages might prevent the proper functionality of the API.*/
+#define RX_BUF_LEN 106  /**< Maximum length of a UWB message. Excahnging larger messages might prevent the proper functionality of the API.*/
 #define MSG_DATA_LEN (RX_BUF_LEN - 6)  /** Maximum data length - do not change! It is always dependent on RX_BUF_LEN.*/
 
 /**
@@ -51,8 +51,13 @@ typedef enum message_type {
     UWB_RANGE_3WAY_FINAL_MSG,       /**< UWB ranging Final message - Initiator sends this 3rd UWB message, telling the Responder to not send back the range value.*/
     UWB_RANGE_4WAY_FINAL_MSG,       /**< UWB ranging Final message - Initiator sends this 3rd UWB message, telling the Responder to send back the range value.*/
     UWB_RANGE_4WAY_RESULT_MSG,      /**< UWB ranging Optional message - after the Responder calcualtes the range, it sends it back to the Initiator.*/
-    UWB_USER_MSG                    /**< UWB general purpose message.*/
+    UWB_USER_MSG,                   /**< UWB general purpose message.*/
+    UWB_ACK_MSG,                    /**< UWB message requiring acknowledge - returns the whole data field.*/
+    UWB_ACK2_MSG,                   /**< UWB message requiring acknowledge - returns only the data field size.*/
+    UWB_ACK_RES_MSG,                /**< UWB acknowledge message.*/
+    UWB_ACK2_RES_MSG                /**< UWB acknowledge 2 message.*/
 } uwb_message_type_t;
+
 
 /**
  * Possible return codes returned by the API functions

@@ -97,7 +97,7 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
     msrmRcvQueue = xQueueCreate(1, sizeof(UWB_measurement));
     msgRcvQueue = xQueueCreate(1, sizeof(UWB_message));
 
-    xTaskCreate(uwb_isr_task, "UWB-rx-isr",  2*configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle_rx);
+    xTaskCreate(uwb_isr_task, "UWB-rx-isr",  3*configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle_rx);
     vTaskDelay(10);
     enable_uwb_int();  // Enable interrupt
     platformSetLowInterferenceRadioMode();
@@ -205,6 +205,22 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
             uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 1);
         }
         send_msrm_to_queue(uwb_msrm);
+    }
+    else if ((uwb_rx_msg.dest == ID) && (uwb_rx_msg.code == UWB_ACK_MSG)) {
+        poll_rx_ts = get_rx_timestamp_u64();
+        uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+
+        uwb_tx_msg = uwb_message_create(uwb_rx_msg.src, ID, UWB_ACK_RES_MSG, &uwb_rx_msg.data[0], uwb_rx_msg.data_len);
+        uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 0);
+        send_msg_to_queue(uwb_rx_msg);
+    }
+    else if ((uwb_rx_msg.dest == ID) && (uwb_rx_msg.code == UWB_ACK2_MSG)) {
+        poll_rx_ts = get_rx_timestamp_u64();
+        uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+
+        uwb_tx_msg = uwb_message_create(uwb_rx_msg.src, ID, UWB_ACK2_RES_MSG, &uwb_rx_msg.data_len, 1);
+        uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 0);
+        send_msg_to_queue(uwb_rx_msg);
     }
     else 
         send_msg_to_queue(uwb_rx_msg);
@@ -315,7 +331,7 @@ uwb_err_code_e send_msg_to_queue(UWB_message msg) {
 
 ///////////////////////////////////////////////////////  INITIATOR  ///////////////////////////////////////////////////////
 uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expected) {
-    uint8_t tx_msg[30];
+    uint8_t tx_msg[RX_BUF_LEN];
     tx_msg[0] = 0xDE;
     tx_msg[1] = msg.src;
     tx_msg[2] = msg.dest;
