@@ -214,6 +214,14 @@ void rx_ok_cb(const dwt_cb_data_t *cb_data) {
         uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 0);
         send_msg_to_queue(uwb_rx_msg);
     }
+    else if ((uwb_rx_msg.dest == ID) && (uwb_rx_msg.code == UWB_ACK2_MSG)) {
+        poll_rx_ts = get_rx_timestamp_u64();
+        uint32_t resp_tx_time = (poll_rx_ts + (TX_AFTER_RX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+
+        uwb_tx_msg = uwb_message_create(uwb_rx_msg.src, ID, UWB_ACK2_RES_MSG, &uwb_rx_msg.data_len, 1);
+        uwb_err_code_e e = uwb_send_msg(uwb_tx_msg, resp_tx_time, 0);
+        send_msg_to_queue(uwb_rx_msg);
+    }
     else 
         send_msg_to_queue(uwb_rx_msg);
 
@@ -323,7 +331,7 @@ uwb_err_code_e send_msg_to_queue(UWB_message msg) {
 
 ///////////////////////////////////////////////////////  INITIATOR  ///////////////////////////////////////////////////////
 uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expected) {
-    uint8_t tx_msg[30];
+    uint8_t tx_msg[RX_BUF_LEN];
     tx_msg[0] = 0xDE;
     tx_msg[1] = msg.src;
     tx_msg[2] = msg.dest;
@@ -361,6 +369,7 @@ uwb_err_code_e uwb_send_msg(UWB_message msg, uint32_t tx_delay, uint8_t rsp_expe
 
 uwb_err_code_e uwb_send_msg_wait_rsp(UWB_message msg, uint32_t tx_delay, uint8_t* rx_buf, uint8_t* rx_buf_len) {
     uwb_send_msg(msg, tx_delay, 1);
+
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(3)) == pdFALSE) {
         dwt_forcetrxoff();
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG | SYS_STATUS_TXFRS); // Clear good RX frame event and TX frame
