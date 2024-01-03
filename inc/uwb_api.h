@@ -4,7 +4,7 @@
 #include "FreeRTOS.h"
 #include "deca_regs.h"
 
-#define RX_BUF_LEN 106  /**< Maximum length of a UWB message. Excahnging larger messages might prevent the proper functionality of the API.*/
+#define RX_BUF_LEN 120  /**< Maximum length of a UWB message. Excahnging larger messages might prevent the proper functionality of the API.*/
 #define MSG_DATA_LEN (RX_BUF_LEN - 6)  /** Maximum data length - do not change! It is always dependent on RX_BUF_LEN.*/
 
 /**

@@ -100,7 +100,7 @@ uwb_err_code_e uwb_api_init(uint8_t node_id) {
     xTaskCreate(uwb_isr_task, "UWB-rx-isr",  2*configMINIMAL_STACK_SIZE, NULL, 4, &uwbTaskHandle_rx);
     vTaskDelay(10);
     enable_uwb_int();  // Enable interrupt
-    platformSetLowInterferenceRadioMode();
+    // platformSetLowInterferenceRadioMode();
 
     return UWB_SUCCESS;
 }
